@@ -626,7 +626,7 @@ static float g_scale = 1.0f;
 static float g_speed = 1.0f;
 static float g_time = 0.0f;
 static int g_grab_index = -1;
-static InteractionMode g_interaction_mode = INTERACTION_GRAB;
+static InteractionMode g_interaction_mode = INTERACTION_POP;
 static double g_press_x, g_press_y;
 static struct timespec g_press_ts;
 
@@ -1067,11 +1067,18 @@ static bool task_text_box_hit(double x, double y)
 
 static void update_pointer_cursor(void) {
     if (!g_ctx || !g_ctx->plat) return;
-    int cursor = task_text_box_hit(g_ctx->ptr_x, g_ctx->ptr_y)
-                     ? g_ctx->text_cursor
-                     : g_interaction_mode == INTERACTION_GRAB
+    int cursor;
+    if (task_close_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
+        cursor = g_ctx->needle_cursor;
+    } else if (task_text_box_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
+        cursor = g_ctx->text_cursor;
+    } else if (task_panel_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
+        cursor = g_ctx->hand_cursor;
+    } else {
+        cursor = g_interaction_mode == INTERACTION_GRAB
                      ? g_ctx->hand_cursor
                      : g_ctx->needle_cursor;
+    }
     if (cursor >= 0) plat_cursor_use(g_ctx->plat, cursor);
 }
 
