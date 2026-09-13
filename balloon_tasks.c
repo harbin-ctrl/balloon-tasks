@@ -1,6 +1,7 @@
 
 #define _GNU_SOURCE
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -127,6 +128,7 @@ typedef struct {
     float pop_timer;
     float scheduled_pop_time;
     float scale;           
+    int color_index;
     char task[TASK_TEXT_MAX + 1];
     GLuint task_texture;
     int task_width;
@@ -453,6 +455,7 @@ static float sprite_h(const Sprite *s, float scale) { return s->anim->h * scale 
 
 static void sprite_roll_anim(Sprite *s) {
     int i = rand() % g_nanims;
+    s->color_index = i;
     s->anim = &g_anims[i];
     s->textures = g_anim_tex[i];
     s->frame = rand() % s->anim->nframes;
@@ -645,12 +648,14 @@ static bool g_tasks_started;
 static bool g_task_close_pressed;
 static bool g_task_panel_dragging;
 static bool g_task_panel_hovered;
+static bool g_loading_prefs;
 static int g_task_panel_drag_dx;
 static int g_task_panel_drag_dy;
 static int g_task_panel_x_override = -1;
 static int g_task_panel_y_override = -1;
 static bool g_task_panel_dirty = true;
 static GLuint g_task_panel_tex;
+static void prefs_save(void);
 
 static int task_panel_x(void)
 {
@@ -817,7 +822,7 @@ static bool task_close_hit(double x, double y)
            y >= panel_y + 2 && y < panel_y + 40;
 }
 
-static bool task_add(const char *text)
+static bool task_add_with_color(const char *text, int color_index)
 {
     bool visible = false;
     for (const char *c = text; *c; c++) {
@@ -839,7 +844,17 @@ static bool task_add(const char *text)
     sprite->task_height = bitmap.height;
     task_bitmap_free(&bitmap);
 
-    sprite_roll_anim(sprite);
+    if (color_index >= 0 && color_index < g_nanims) {
+        sprite->color_index = color_index;
+        sprite->anim = &g_anims[color_index];
+        sprite->textures = g_anim_tex[color_index];
+        sprite->frame = rand() % sprite->anim->nframes;
+        sprite->frame_time = frandf() * sprite->anim->frames[sprite->frame].delay_ms;
+        sprite->scale = BALLOON_SCALE_MIN +
+                        frandf() * (BALLOON_SCALE_MAX - BALLOON_SCALE_MIN);
+    } else {
+        sprite_roll_anim(sprite);
+    }
     sprite_init(sprite, g_mode, g_scale, g_speed, g_ctx->width, g_ctx->height);
     float body_height = sprite_h(sprite, g_scale) * BALLOON_TIE_Y;
     float y_range = fmaxf(0.f, g_ctx->height - body_height);
@@ -850,7 +865,169 @@ static bool task_add(const char *text)
     g_task_panel_dirty = true;
     g_full_damage = true;
     g_ctx->need_redraw = true;
+    if (!g_loading_prefs) prefs_save();
     return true;
+}
+
+static bool task_add(const char *text)
+{
+    return task_add_with_color(text, -1);
+}
+
+typedef struct {
+    int color;
+    char text[TASK_TEXT_MAX + 1];
+} PrefTask;
+
+enum { PREFS_MAX_TASKS = 1024, PREFS_PATH_MAX = 512 };
+
+static bool prefs_path(char *path, size_t size)
+{
+    const char *base = getenv("APPDATA");
+    if (!base) base = getenv("XDG_CONFIG_HOME");
+    if (!base) base = getenv("HOME");
+    if (!base) base = ".";
+    int n = snprintf(path, size, "%s/balloon-tasks.preferences", base);
+    return n > 0 && (size_t)n < size;
+}
+
+static bool prefs_line(FILE *file, char *line, size_t size)
+{
+    if (!fgets(line, (int)size, file)) return false;
+    size_t length = strlen(line);
+    if (length == 0 || (line[length - 1] != '\n' && !feof(file))) return false;
+    while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
+        line[--length] = '\0';
+    }
+    return true;
+}
+
+static bool prefs_parse_int(const char *text, int *value)
+{
+    char extra;
+    return sscanf(text, "%d %c", value, &extra) == 1;
+}
+
+static void prefs_save(void)
+{
+    char path[PREFS_PATH_MAX];
+    char temp[PREFS_PATH_MAX];
+    if (!prefs_path(path, sizeof(path))) return;
+    int n = snprintf(temp, sizeof(temp), "%s.tmp", path);
+    if (n <= 0 || (size_t)n >= sizeof(temp)) return;
+
+    FILE *file = fopen(temp, "wb");
+    if (!file) return;
+    fprintf(file, "BALLOON_TASKS_PREFS 1\n");
+    fprintf(file, "window %d %d\n", task_panel_x(), task_panel_y());
+    fprintf(file, "started %d\n", g_tasks_started ? 1 : 0);
+    fprintf(file, "count %d\n", tasks_left());
+    for (int i = 0; i < g_nsprites; i++) {
+        Sprite *sprite = &g_sprites[i];
+        if (sprite->dead || sprite->popped) continue;
+        fprintf(file, "task %d|%s\n", sprite->color_index, sprite->task);
+    }
+    if (fclose(file) != 0) {
+        remove(temp);
+        return;
+    }
+    remove(path);
+    if (rename(temp, path) != 0) remove(temp);
+}
+
+static void prefs_reset(const char *path)
+{
+    remove(path);
+    g_task_panel_x_override = -1;
+    g_task_panel_y_override = -1;
+    g_tasks_started = false;
+}
+
+static void prefs_load(void)
+{
+    char path[PREFS_PATH_MAX];
+    if (!prefs_path(path, sizeof(path))) return;
+    FILE *file = fopen(path, "rb");
+    if (!file) return;
+
+    PrefTask tasks[PREFS_MAX_TASKS];
+    char line[256];
+    int window_x, window_y, started, count;
+    char extra;
+    bool valid = prefs_line(file, line, sizeof(line)) &&
+                 strcmp(line, "BALLOON_TASKS_PREFS 1") == 0;
+    if (valid) {
+        valid = prefs_line(file, line, sizeof(line)) &&
+                sscanf(line, "window %d %d %c", &window_x, &window_y, &extra) == 2;
+    }
+    if (valid) {
+        valid = prefs_line(file, line, sizeof(line)) &&
+                prefs_parse_int(line + 8, &started) && (started == 0 || started == 1);
+    }
+    if (valid) {
+        valid = prefs_line(file, line, sizeof(line)) &&
+                prefs_parse_int(line + 6, &count) && count >= 0 && count <= PREFS_MAX_TASKS;
+    }
+    if (valid) {
+        valid = window_x >= 0 && window_y >= 0 &&
+                window_x <= g_ctx->width - TASK_PANEL_WIDTH &&
+                window_y <= g_ctx->height - TASK_PANEL_HEIGHT;
+    }
+    if (valid && count > 0 && started == 0) valid = false;
+    for (int i = 0; valid && i < count; i++) {
+        char *separator;
+        valid = prefs_line(file, line, sizeof(line));
+        if (!valid || strncmp(line, "task ", 5) != 0) break;
+        separator = strchr(line + 5, '|');
+        if (!separator) {
+            valid = false;
+            break;
+        }
+        *separator = '\0';
+        valid = prefs_parse_int(line + 5, &tasks[i].color) &&
+                tasks[i].color >= 0 && tasks[i].color < g_nanims;
+        const char *text = separator + 1;
+        size_t length = strlen(text);
+        if (length == 0 || length > TASK_TEXT_MAX) valid = false;
+        bool visible = false;
+        for (size_t j = 0; valid && j < length; j++) {
+            if ((unsigned char)text[j] < 0x20 || (unsigned char)text[j] > 0x7E) {
+                valid = false;
+            }
+            visible = visible || text[j] != ' ';
+        }
+        if (!visible) valid = false;
+        if (valid) memcpy(tasks[i].text, text, length + 1);
+    }
+    if (valid) {
+        while (fgets(line, sizeof(line), file)) {
+            for (char *c = line; *c; c++) {
+                if (!isspace((unsigned char)*c)) valid = false;
+            }
+        }
+    }
+    fclose(file);
+    if (!valid) {
+        prefs_reset(path);
+        return;
+    }
+
+    g_task_panel_x_override = window_x;
+    g_task_panel_y_override = window_y;
+    g_tasks_started = started != 0;
+    g_loading_prefs = true;
+    for (int i = 0; i < count; i++) {
+        if (!task_add_with_color(tasks[i].text, tasks[i].color)) {
+            g_loading_prefs = false;
+            prefs_reset(path);
+            return;
+        }
+    }
+    g_loading_prefs = false;
+    g_tasks_started = started != 0;
+    g_task_panel_dirty = true;
+    g_full_damage = true;
+    g_ctx->need_redraw = true;
 }
 
 static void pop_sprite(Sprite *s, float pop_x, float pop_y) {
@@ -867,6 +1044,7 @@ static void pop_sprite(Sprite *s, float pop_x, float pop_y) {
     s->y = pop_y - ph * 0.5f;
     g_task_panel_dirty = true;
     g_ctx->need_redraw = true;
+    if (!g_loading_prefs) prefs_save();
     play_pop_sound(POP_SOUND_VOLUME);
 }
 
@@ -1150,6 +1328,7 @@ static void pointer_motion(void *d, int x, int y) {
         g_task_panel_y_override = panel_y;
         g_full_damage = true;
         g_ctx->need_redraw = true;
+        if (!g_loading_prefs) prefs_save();
     }
     task_panel_hover_update();
     update_pointer_cursor();
@@ -1757,6 +1936,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "out of memory\n");
         return 1;
     }
+    prefs_load();
     startup_mark("scene initialized");
 
     if (g_ghost) {

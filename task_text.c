@@ -1,5 +1,6 @@
 #include "task_text.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,7 +43,7 @@ static uint8_t glyph_pixel(unsigned char c, int x, int y)
     return task_font_bitmap[c - 32][y][x];
 }
 
-static void glyph(TaskBitmap *bitmap, unsigned char c, int x, int y, int scale, Color color)
+static void glyph(TaskBitmap *bitmap, unsigned char c, int x, int y, float scale, Color color)
 {
     uint8_t base_alpha = color.a;
     for (int row = 0; row < TASK_GLYPH_HEIGHT; row++) {
@@ -53,12 +54,16 @@ static void glyph(TaskBitmap *bitmap, unsigned char c, int x, int y, int scale, 
             }
             Color pixel_color = color;
             pixel_color.a = (uint8_t)((base_alpha * alpha + 127) / 255);
-            fill(bitmap, x + col * scale, y + row * scale, scale, scale, pixel_color);
+            int px = x + (int)floorf(col * scale);
+            int py = y + (int)floorf(row * scale);
+            int pw = (int)ceilf((col + 1) * scale) - (int)floorf(col * scale);
+            int ph = (int)ceilf((row + 1) * scale) - (int)floorf(row * scale);
+            fill(bitmap, px, py, pw > 0 ? pw : 1, ph > 0 ? ph : 1, pixel_color);
         }
     }
 }
 
-static void text(TaskBitmap *bitmap, const char *value, int x, int y, int scale,
+static void text(TaskBitmap *bitmap, const char *value, int x, int y, float scale,
                  Color color, Color outline)
 {
     for (size_t i = 0; value[i]; i++) {
@@ -66,7 +71,7 @@ static void text(TaskBitmap *bitmap, const char *value, int x, int y, int scale,
         if (c < 32 || c > 126) {
             c = '?';
         }
-        int gx = x + (int)i * TASK_GLYPH_WIDTH * scale;
+        int gx = x + (int)floorf(i * TASK_GLYPH_WIDTH * scale);
         glyph(bitmap, c, gx - 1, y, scale, outline);
         glyph(bitmap, c, gx + 1, y, scale, outline);
         glyph(bitmap, c, gx, y - 1, scale, outline);
@@ -142,8 +147,10 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
         3, 12, 30, 255
     });
     const char *hint = "ENTER TO ADD";
-    int hint_x = TASK_PANEL_WIDTH - 14 - (int)strlen(hint) * TASK_TEXT_CHAR_WIDTH;
-    text(bitmap, hint, hint_x, 12, 1,
+    const float hint_scale = 0.5f;
+    int hint_x = TASK_PANEL_WIDTH - 14 -
+                 (int)floorf(strlen(hint) * TASK_TEXT_CHAR_WIDTH * hint_scale);
+    text(bitmap, hint, hint_x, 16, hint_scale,
     (Color) {
         166, 205, 255, 255
     }, (Color) {
