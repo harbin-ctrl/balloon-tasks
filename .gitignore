@@ -2,6 +2,7 @@
 /balloon-tasks
 /*.exe
 /*.ico
+/installer/
 
 /balloon_assets.h
 

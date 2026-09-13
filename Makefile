@@ -92,6 +92,7 @@ FORCE:
 
 clean:
 	$(RM) $(TARGET) $(OBJS) $(RES_OBJ) $(APP_ID).ico
+	$(RM) -r installer
 	$(RM) xdg-*.h xdg-*.c balloon_assets.h thunder_pcm.h
 	$(RM) assets/.apngs_generated assets/.pops_generated
 
@@ -117,13 +118,33 @@ WIN_DIR ?= $(TOYS_ROOT)/win-packaging
 WINDRES ?= windres
 include $(WIN_DIR)/install.mk
 
-# One per-user win-toys folder and a shortcut in the Start menu's Ace folder,
-# as the ace-toys package installs on Linux. See win-packaging/install.mk.
-install: $(TARGET)
-	$(call win_install,$(APP_ID),$(APP_NAME),$(TARGET))
+APP_VERSION := 0.1
+WIN_ARCH := $(if $(filter x86_64,$(MSYSTEM_CARCH)),x64,arm64)
+ISCC ?= $$(cygpath -u "$$LOCALAPPDATA")/Programs/Inno Setup 6/ISCC.exe
+INSTALLER := installer/$(APP_ID)-$(APP_VERSION)-$(WIN_ARCH)-setup.exe
+# Keeps MSYS2 from rewriting /FLAG arguments into paths.
+WIN_NO_ARGCONV := MSYS2_ARG_CONV_EXCL='*'
+
+.PHONY: installer
+
+# The Inno Setup installer; see balloon-tasks.iss.
+installer: $(TARGET) $(APP_ID).ico $(APP_ID).iss
+	rm -rf installer/stage
+	mkdir -p installer/stage
+	cp $(TARGET) installer/stage/
+	$(call win_runtime_dll_paths,$(TARGET)) | xargs -r -I{} cp {} installer/stage/
+	$(WIN_NO_ARGCONV) "$(ISCC)" /Q /DAppVersion=$(APP_VERSION) /DArch=$(WIN_ARCH) $(APP_ID).iss
+	@echo "installer: $(INSTALLER)"
+
+# Installs through the installer, replacing any earlier win-toys copy.
+install: installer
+	$(call win_uninstall,$(APP_ID),$(APP_NAME))
+	$(WIN_NO_ARGCONV) "./$(INSTALLER)" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
 
 uninstall:
 	$(call win_uninstall,$(APP_ID),$(APP_NAME))
+	uninstaller="$$(cygpath -u "$$LOCALAPPDATA")/Programs/$(APP_ID)/unins000.exe"; \
+	if [ -f "$$uninstaller" ]; then $(WIN_NO_ARGCONV) "$$uninstaller" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART; fi
 
 # Into the package the root Makefile's `package` builds.
 stage: $(TARGET)
