@@ -246,7 +246,7 @@ static void draw_string_frame(uint8_t *pixels, uint8_t *high, int frame) {
     const float phase = (float)frame * 2.0f * (float)M_PI / FRAME_COUNT;
     const float bx = 36.0f * sx;
     Point current = {bx, (34.0f + sinf(phase) * 3.0f + 37.5f) * sy};
-    Color thread = {90, 90, 100};
+    Color thread = {222, 222, 226};
     for (int segment = 0; segment < 14; segment++) {
         Point next = {
             bx + sinf(phase + segment * .7f) * (2.0f + segment * .5f) * sx,
