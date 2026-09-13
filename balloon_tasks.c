@@ -824,6 +824,16 @@ static bool task_close_hit(double x, double y)
            y >= panel_y + 2 && y < panel_y + 40;
 }
 
+/* Each '!' in a task inflates its balloon 30%, up to three. */
+static float task_emphasis_scale(const char *text)
+{
+    int marks = 0;
+    for (const char *c = text; *c && marks < 3; c++) {
+        marks += *c == '!';
+    }
+    return 1.0f + 0.3f * (float)marks;
+}
+
 static bool task_add_with_color(const char *text, int color_index)
 {
     bool visible = false;
@@ -857,6 +867,7 @@ static bool task_add_with_color(const char *text, int color_index)
     } else {
         sprite_roll_anim(sprite);
     }
+    sprite->scale *= task_emphasis_scale(text);
     sprite_init(sprite, g_mode, g_scale, g_speed, g_ctx->width, g_ctx->height);
     float body_height = sprite_h(sprite, g_scale) * BALLOON_TIE_Y;
     float y_range = fmaxf(0.f, g_ctx->height - body_height);

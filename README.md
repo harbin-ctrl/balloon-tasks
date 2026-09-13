@@ -3,7 +3,8 @@
 Turns tasks into balloons floating up the desktop. The transparent sheet has no
 system window frame and remains click-through outside the task panel, balloons,
 and menus. It starts empty: type up to 32 characters in **New Task:** and press
-Enter to create a labeled balloon at a random visible position.
+Enter to create a labeled balloon at a random visible position. Each `!` in the
+task inflates its balloon 30%, up to three (+90%).
 
 Task text is centered across the balloon body and may extend beyond both sides.
 Each balloon keeps floating upward; once its body clears the top it immediately
@@ -26,7 +27,7 @@ It uses the Poingo "freerange" trick: a maximized `xdg_toplevel` with a NULL
 opaque region and an ARGB EGL surface, with the Wayland input region
 restricted to the sprites' bounding boxes each frame.
 
-Balloon bodies, strings, and pop bursts are drawn procedurally in C when the program starts, so the executable needs no external sprite files and the build has no asset-generation stage. Each balloon *body* is then scaled *down* to its own random size at draw time; the pop bursts share the bodies' native size so a popped balloon's burst matches its size.
+Balloon bodies, strings, and pop bursts are drawn procedurally in C when the program starts, so the executable needs no external sprite files and the build has no asset-generation stage. Each balloon *body* is then scaled *down* to its own random size at draw time, and up again by its task's `!` count; the pop bursts share the bodies' native size so a popped balloon's burst matches its size.
 
 The hanging **string is not part of the balloon body** — it is one shared, color-independent animation drawn as its own constant-size quad, hung from the tie-off under each body. That is deliberate: the toy simulates balloons blown up to different sizes, and a piece of string is the same length whichever balloon it is tied to, so it must not scale (or stretch) with the body. This is also why any future body *ovalness* is a safe, free per-balloon knob — the string is decoupled and never distorts.
 
