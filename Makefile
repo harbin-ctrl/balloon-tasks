@@ -54,7 +54,7 @@ endif
 PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
 
-.PHONY: all clean install uninstall stage icons regen-icons
+.PHONY: all clean install uninstall stage icons regen-icons regen-font test
 
 all: $(TARGET)
 
@@ -77,6 +77,12 @@ audio.o: audio.c audio.h $(TOYAUDIO_DIR)/toy_audio.h \
 
 thunder_synth.o: thunder_synth.c thunder_synth.h
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+test: test_task_text$(EXE)
+	./test_task_text$(EXE)
+
+test_task_text$(EXE): test_task_text.c task_text.c task_text.h task_font.h
+	$(CC) -O2 -Wall -Wextra -o $@ test_task_text.c task_text.c -lm
 
 # The ring menu, audio core and platform layer live in their own library
 # checkouts; delegate so they rebuild whenever their sources change.

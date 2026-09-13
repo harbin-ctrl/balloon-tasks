@@ -808,12 +808,8 @@ static void task_panel_hover_update(void)
 
 static void task_cursor_from_pointer(void)
 {
-    int offset = (int)g_ctx->ptr_x - task_panel_x() - 23;
-    int cursor = (offset + TASK_TEXT_CHAR_WIDTH / 2) / TASK_TEXT_CHAR_WIDTH;
-    int length = (int)strlen(g_task_input);
-    if (cursor < 0) cursor = 0;
-    if (cursor > length) cursor = length;
-    g_task_cursor = (size_t)cursor;
+    int offset = (int)g_ctx->ptr_x - task_panel_x() - TASK_INPUT_TEXT_X;
+    g_task_cursor = task_text_cursor(g_task_input, offset);
 }
 
 static bool task_close_hit(double x, double y)

@@ -1,6 +1,5 @@
 #include "task_text.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +9,17 @@
 typedef struct {
     uint8_t r, g, b, a;
 } Color;
+
+/* Glyph outlines are drawn this many pixels around the fill. */
+enum { TEXT_OUTLINE = 1 };
+
+/* Text is clipped past this x; e.g. an oversize task stays inside its field. */
+enum { NO_CLIP = 1 << 30 };
+
+enum TextLayer {
+    LAYER_OUTLINE,
+    LAYER_FILL,
+};
 
 static void blend(TaskBitmap *bitmap, int x, int y, Color color)
 {
@@ -34,50 +44,75 @@ static void fill(TaskBitmap *bitmap, int x, int y, int width, int height, Color 
     }
 }
 
-static uint8_t glyph_pixel(unsigned char c, int x, int y)
+static const TaskGlyph *face_glyph(enum TaskFaceSize size, unsigned char c)
 {
-    if (c < 32 || c > 126 || x < 0 || x >= TASK_GLYPH_WIDTH ||
-            y < 0 || y >= TASK_GLYPH_HEIGHT) {
-        return 0;
+    if (c < TASK_FONT_FIRST || c >= TASK_FONT_FIRST + TASK_FONT_GLYPHS) {
+        c = '?';
     }
-    return task_font_bitmap[c - 32][y][x];
+    return &task_faces[size].glyphs[c - TASK_FONT_FIRST];
 }
 
-static void glyph(TaskBitmap *bitmap, unsigned char c, int x, int y, float scale, Color color)
+static int text_width(const char *value, size_t length, enum TaskFaceSize size)
 {
-    uint8_t base_alpha = color.a;
-    for (int row = 0; row < TASK_GLYPH_HEIGHT; row++) {
-        for (int col = 0; col < TASK_GLYPH_WIDTH; col++) {
-            uint8_t alpha = glyph_pixel(c, col, row);
-            if (!alpha) {
+    int width = 0;
+    for (size_t i = 0; i < length && value[i]; i++) {
+        width += face_glyph(size, (unsigned char)value[i])->advance;
+    }
+    return width;
+}
+
+/* Blends one glyph's coverage with its pen at (x, baseline). */
+static void glyph(TaskBitmap *bitmap, const TaskGlyph *g, int x, int baseline, int clip_x,
+                  Color color)
+{
+    for (int row = 0; row < g->h; row++) {
+        for (int col = 0; col < g->w; col++) {
+            int px = x + g->x + col;
+            if (px >= clip_x) {
+                break;
+            }
+
+            uint8_t coverage = task_font_pixels[g->offset + (size_t)row * g->w + col];
+            if (!coverage) {
                 continue;
             }
-            Color pixel_color = color;
-            pixel_color.a = (uint8_t)((base_alpha * alpha + 127) / 255);
-            int px = x + (int)floorf(col * scale);
-            int py = y + (int)floorf(row * scale);
-            int pw = (int)ceilf((col + 1) * scale) - (int)floorf(col * scale);
-            int ph = (int)ceilf((row + 1) * scale) - (int)floorf(row * scale);
-            fill(bitmap, px, py, pw > 0 ? pw : 1, ph > 0 ? ph : 1, pixel_color);
+
+            Color pixel = color;
+            pixel.a = (uint8_t)((color.a * coverage + 127) / 255);
+            blend(bitmap, px, baseline + g->y + row, pixel);
         }
     }
 }
 
-static void text(TaskBitmap *bitmap, const char *value, int x, int y, float scale,
-                 Color color, Color outline)
+static void text_layer(TaskBitmap *bitmap, const char *value, int x, int baseline,
+                       enum TaskFaceSize size, int clip_x, enum TextLayer layer, Color color)
 {
+    static const int outline_offsets[][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} };
+
     for (size_t i = 0; value[i]; i++) {
-        unsigned char c = (unsigned char)value[i];
-        if (c < 32 || c > 126) {
-            c = '?';
+        const TaskGlyph *g = face_glyph(size, (unsigned char)value[i]);
+        if (layer == LAYER_FILL) {
+            glyph(bitmap, g, x, baseline, clip_x, color);
+            x += g->advance;
+            continue;
         }
-        int gx = x + (int)floorf(i * TASK_GLYPH_WIDTH * scale);
-        glyph(bitmap, c, gx - 1, y, scale, outline);
-        glyph(bitmap, c, gx + 1, y, scale, outline);
-        glyph(bitmap, c, gx, y - 1, scale, outline);
-        glyph(bitmap, c, gx, y + 1, scale, outline);
-        glyph(bitmap, c, gx, y, scale, color);
+
+        for (size_t k = 0; k < sizeof(outline_offsets) / sizeof(outline_offsets[0]); k++) {
+            glyph(bitmap, g, x + outline_offsets[k][0] * TEXT_OUTLINE,
+                  baseline + outline_offsets[k][1] * TEXT_OUTLINE, clip_x, color);
+        }
+        x += g->advance;
     }
+}
+
+/* Draws outlined text whose line box starts at (x, y). Outlines go down
+   first so a glyph's outline never covers its neighbour's fill. */
+static void text(TaskBitmap *bitmap, const char *value, int x, int y, enum TaskFaceSize size,
+                 int clip_x, Color color, Color outline)
+{
+    int baseline = y + task_faces[size].ascent;
+    text_layer(bitmap, value, x, baseline, size, clip_x, LAYER_OUTLINE, outline);
+    text_layer(bitmap, value, x, baseline, size, clip_x, LAYER_FILL, color);
 }
 
 static bool bitmap_alloc(TaskBitmap *bitmap, int width, int height)
@@ -94,12 +129,12 @@ static bool bitmap_alloc(TaskBitmap *bitmap, int width, int height)
 
 bool task_label_bitmap(const char *value, TaskBitmap *bitmap)
 {
-    const int scale = 1;
-    int width = (int)strlen(value) * TASK_GLYPH_WIDTH * scale + 2;
-    if (!bitmap_alloc(bitmap, width, TASK_GLYPH_HEIGHT * scale + 2)) {
+    int width = text_width(value, strlen(value), TASK_FACE_NORMAL) + 2 * TEXT_OUTLINE;
+    int height = task_faces[TASK_FACE_NORMAL].line_height + 2 * TEXT_OUTLINE;
+    if (!bitmap_alloc(bitmap, width, height)) {
         return false;
     }
-    text(bitmap, value, 1, 1, scale,
+    text(bitmap, value, TEXT_OUTLINE, TEXT_OUTLINE, TASK_FACE_NORMAL, NO_CLIP,
     (Color) {
         255, 255, 255, 255
     }, (Color) {
@@ -132,25 +167,27 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
         57, 151, 255, 255
     });
     text(bitmap, "X", close_pressed ? 8 : 14, close_pressed ? 0 : 10,
-         close_pressed ? 2 : 1,
+         close_pressed ? TASK_FACE_LARGE : TASK_FACE_NORMAL, NO_CLIP,
     (Color) {
         255, 255, 255, 255
     }, (Color) {
         3, 12, 30, 255
     });
+    const int title_y = 10;
     const char *title = "New Task";
-    int title_x = (TASK_PANEL_WIDTH - (int)strlen(title) * TASK_TEXT_CHAR_WIDTH) / 2;
-    text(bitmap, title, title_x, 10, 1,
+    int title_x = (TASK_PANEL_WIDTH - text_width(title, strlen(title), TASK_FACE_NORMAL)) / 2;
+    text(bitmap, title, title_x, title_y, TASK_FACE_NORMAL, NO_CLIP,
     (Color) {
         255, 255, 255, 255
     }, (Color) {
         3, 12, 30, 255
     });
+
+    /* The hint shares the title's baseline. */
     const char *hint = "ENTER TO ADD";
-    const float hint_scale = 0.5f;
-    int hint_x = TASK_PANEL_WIDTH - 14 -
-                 (int)floorf(strlen(hint) * TASK_TEXT_CHAR_WIDTH * hint_scale);
-    text(bitmap, hint, hint_x, 16, hint_scale,
+    int hint_x = TASK_PANEL_WIDTH - 14 - text_width(hint, strlen(hint), TASK_FACE_SMALL);
+    int hint_y = title_y + task_faces[TASK_FACE_NORMAL].ascent - task_faces[TASK_FACE_SMALL].ascent;
+    text(bitmap, hint, hint_x, hint_y, TASK_FACE_SMALL, NO_CLIP,
     (Color) {
         166, 205, 255, 255
     }, (Color) {
@@ -166,14 +203,15 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
     fill(bitmap, 17, 45, TASK_PANEL_WIDTH - 34, 38, (Color) {
         245, 248, 255, 245
     });
-    text(bitmap, value, 23, 52, 1,
+    text(bitmap, value, TASK_INPUT_TEXT_X, 52, TASK_FACE_NORMAL,
+         TASK_INPUT_TEXT_X + TASK_INPUT_TEXT_WIDTH,
     (Color) {
         10, 28, 58, 255
     }, (Color) {
         255, 255, 255, 255
     });
     if (active) {
-        int cursor_x = 23 + (int)cursor * TASK_TEXT_CHAR_WIDTH;
+        int cursor_x = TASK_INPUT_TEXT_X + task_text_offset(value, cursor);
         fill(bitmap, cursor_x, 51, 2, 21, (Color) {
             18, 92, 190, 255
         });
@@ -188,8 +226,8 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
     } else {
         snprintf(status, sizeof(status), "%d Tasks left to POP!", tasks_left);
     }
-    int status_x = (TASK_PANEL_WIDTH - (int)strlen(status) * TASK_GLYPH_WIDTH) / 2;
-    text(bitmap, status, status_x, 104, 1,
+    int status_x = (TASK_PANEL_WIDTH - text_width(status, strlen(status), TASK_FACE_NORMAL)) / 2;
+    text(bitmap, status, status_x, 104, TASK_FACE_NORMAL, NO_CLIP,
     (Color) {
         166, 205, 255, 255
     }, (Color) {
@@ -202,4 +240,23 @@ void task_bitmap_free(TaskBitmap *bitmap)
 {
     free(bitmap->pixels);
     memset(bitmap, 0, sizeof(*bitmap));
+}
+
+int task_text_offset(const char *text, size_t cursor)
+{
+    return text_width(text, cursor, TASK_FACE_NORMAL);
+}
+
+size_t task_text_cursor(const char *text, int offset)
+{
+    int pen = 0;
+    size_t i = 0;
+    for (; text[i]; i++) {
+        int advance = face_glyph(TASK_FACE_NORMAL, (unsigned char)text[i])->advance;
+        if (offset < pen + advance / 2) {
+            return i;
+        }
+        pen += advance;
+    }
+    return i;
 }

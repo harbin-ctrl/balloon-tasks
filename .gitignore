@@ -1,5 +1,6 @@
 *.o
 /balloon-tasks
+/test_task_text
 /*.exe
 /*.ico
 /installer/
