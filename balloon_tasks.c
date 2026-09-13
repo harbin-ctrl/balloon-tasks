@@ -215,9 +215,9 @@ static void start_gust(void) {
 }
 
 static bool g_storm_active;
-static float g_storm_timer;      
+static float g_storm_timer;
 static float g_storm_leg_timer;  
-static float g_storm_pop_timer;  
+static float g_storm_pop_timer;
 static float g_storm_duration;   
 static float g_storm_alpha;      
 static int g_over_w8;            
@@ -307,8 +307,6 @@ static void lightning_update(float dt) {
     }
 }
 
-static void pop_random_sprite(void);   
-
 static void storm_new_leg(bool first) {
     float strength = 170.f + frandf() * 110.f;
     float dir;
@@ -367,10 +365,6 @@ static void breeze_update(float dt) {
             if (frandf() < 0.55f) lightning_strike();
             else if (frandf() < 0.20f)
                 g_dry_flash_delay = 0.4f + frandf() * 1.2f;
-            float r = frandf();
-            int casualties = (r < 0.5f) ? 1 : (r < 0.75f) ? 2 : 3;
-            for (int k = 0; k < casualties; k++)
-                pop_random_sprite();
         }
         if (g_dry_flash_delay > 0.f) {
             g_dry_flash_delay -= dt;
@@ -835,21 +829,6 @@ static void pop_sprite(Sprite *s, float pop_x, float pop_y) {
     g_task_panel_dirty = true;
     g_ctx->need_redraw = true;
     play_pop_sound(POP_SOUND_VOLUME);
-}
-
-static void pop_random_sprite(void) {
-    int pick = -1, seen = 0;
-    for (int i = 0; i < g_nsprites; i++) {
-        if (g_sprites[i].dead || g_sprites[i].popped) continue;
-        seen++;
-        if (rand() % seen == 0) pick = i;
-    }
-    if (pick >= 0) {
-        Sprite *s = &g_sprites[pick];
-        float cx = s->x + sprite_w(s, g_scale) * 0.5f;
-        float cy = s->y + sprite_h(s, g_scale) * (32.f / 128.f); 
-        pop_sprite(s, cx, cy);
-    }
 }
 
 static bool g_mass_pop_active = false;
@@ -1659,7 +1638,6 @@ int main(int argc, char **argv) {
     struct timespec ts_prev;
     clock_gettime(CLOCK_MONOTONIC, &ts_prev);
     float t = 0.f;
-    float respawn_timer = 10.0f + frandf() * 5.0f;
 
     ctx.need_redraw = true;
     startup_mark("ready");
@@ -1726,23 +1704,6 @@ int main(int argc, char **argv) {
                     ctx.running = false;
                 } else {
                     g_mass_pop_active = false;
-                }
-            }
-        } else {
-            respawn_timer -= dt;
-            if (respawn_timer <= 0.f) {
-                respawn_timer = 10.0f + frandf() * 5.0f;
-                for (int i = 0; i < g_nsprites; i++) {
-                    if (g_sprites[i].dead) {
-                        Sprite *s = &g_sprites[i];
-                        sprite_roll_anim(s);
-                        sprite_init(s, mode, scale, speed, ctx.width, ctx.height);
-                        s->y = (float)ctx.height;
-                        s->dead = false;
-                        s->popped = false;
-                        s->grabbed = false;
-                        break;
-                    }
                 }
             }
         }
