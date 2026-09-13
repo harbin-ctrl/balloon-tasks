@@ -921,6 +921,28 @@ static bool prefs_parse_int(const char *text, int *value)
     return sscanf(text, "%d %c", value, &extra) == 1;
 }
 
+/* Whether the user last quit on purpose. Read before anything starts, so an
+   autostart can exit at once; the full load validates the file later. */
+static bool prefs_closed_deliberately(void)
+{
+    char path[PREFS_PATH_MAX];
+    if (!prefs_path(path, sizeof(path))) return false;
+    FILE *file = fopen(path, "rb");
+    if (!file) return false;
+
+    char line[256];
+    int closed = 0;
+    bool valid = prefs_line(file, line, sizeof(line)) &&
+                 strcmp(line, "BALLOON_TASKS_PREFS 2") == 0;
+    /* window, started, closed */
+    for (int i = 0; valid && i < 3; i++) {
+        valid = prefs_line(file, line, sizeof(line));
+    }
+    fclose(file);
+    return valid && strncmp(line, "closed ", 7) == 0 &&
+           prefs_parse_int(line + 7, &closed) && closed == 1;
+}
+
 static void prefs_save(void)
 {
     char path[PREFS_PATH_MAX];
@@ -957,9 +979,8 @@ static void prefs_reset(const char *path)
     g_tasks_started = false;
 }
 
-static bool prefs_load(bool *closed_previous)
+static bool prefs_load(void)
 {
-    *closed_previous = false;
     char path[PREFS_PATH_MAX];
     if (!prefs_path(path, sizeof(path))) return false;
     FILE *file = fopen(path, "rb");
@@ -1036,7 +1057,6 @@ static bool prefs_load(bool *closed_previous)
     g_task_panel_x_override = window_x;
     g_task_panel_y_override = window_y;
     g_tasks_started = started != 0;
-    *closed_previous = closed != 0;
     g_loading_prefs = true;
     for (int i = 0; i < count; i++) {
         if (!task_add_with_color(tasks[i].text, tasks[i].color)) {
@@ -1720,6 +1740,8 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--autostart") == 0) g_autostart = true;
     }
+    /* Started at sign-in after a deliberate quit: stay closed, flag kept. */
+    if (g_autostart && prefs_closed_deliberately()) return 0;
     const Mode mode = MODE_FLOAT;
     const float scale = 1.0f, speed = 1.0f;  
     const bool pixel = false;
@@ -1965,16 +1987,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "out of memory\n");
         return 1;
     }
-    bool closed_previous = false;
-    bool prefs_valid = prefs_load(&closed_previous);
-    /* An autostart after a deliberate close stays closed, and keeps the flag
-       for the next login. Any other start clears it. */
-    g_closed_deliberately = g_autostart && closed_previous;
-    if (g_closed_deliberately) {
-        ctx.running = false;
-    } else if (prefs_valid) {
-        prefs_save();
-    }
+    /* Running clears the deliberate-close flag. */
+    if (prefs_load()) prefs_save();
     startup_mark("scene initialized");
 
     if (g_ghost) {
