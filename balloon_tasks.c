@@ -599,6 +599,7 @@ typedef struct {
 
     int needle_cursor;
     int hand_cursor;
+    int text_cursor;
 } Ctx;
 
 static volatile sig_atomic_t g_signal_quit = 0;
@@ -1004,6 +1005,24 @@ static void render_hand_cursor(uint32_t *px, int size) {
     }
 }
 
+static void render_text_cursor(uint32_t *px, int size)
+{
+    memset(px, 0, (size_t)size * size * sizeof(*px));
+    if (size < 42) return;
+    for (int y = 12; y <= 40; y++) {
+        for (int x = 14; x <= 18; x++) {
+            bool edge = x == 14 || x == 18 || y == 12 || y == 40;
+            if (edge || (x >= 15 && x <= 17)) {
+                px[(size_t)y * size + x] = 0xFF202840;
+            }
+        }
+    }
+    for (int y = 14; y < 40; y++) {
+        px[(size_t)y * size + 15] = 0xFFFFFFFF;
+        px[(size_t)y * size + 16] = 0xFFFFFFFF;
+    }
+}
+
 /* The grab cursor's hotspot, in its pixels. */
 #define HAND_HOT_X 9
 #define HAND_HOT_Y 7
@@ -1032,9 +1051,25 @@ static bool create_hand_cursor(Ctx *ctx) {
     return ctx->hand_cursor >= 0;
 }
 
+static bool create_text_cursor(Ctx *ctx)
+{
+    ctx->text_cursor = create_cursor(ctx, render_text_cursor, 16, 28);
+    return ctx->text_cursor >= 0;
+}
+
+static bool task_text_box_hit(double x, double y)
+{
+    int panel_x = task_panel_x();
+    int panel_y = task_panel_y();
+    return x >= panel_x + 14 && x < panel_x + TASK_PANEL_WIDTH - 14 &&
+           y >= panel_y + 42 && y < panel_y + 86;
+}
+
 static void update_pointer_cursor(void) {
     if (!g_ctx || !g_ctx->plat) return;
-    int cursor = g_interaction_mode == INTERACTION_GRAB
+    int cursor = task_text_box_hit(g_ctx->ptr_x, g_ctx->ptr_y)
+                     ? g_ctx->text_cursor
+                     : g_interaction_mode == INTERACTION_GRAB
                      ? g_ctx->hand_cursor
                      : g_ctx->needle_cursor;
     if (cursor >= 0) plat_cursor_use(g_ctx->plat, cursor);
@@ -1044,6 +1079,7 @@ static void pointer_enter(void *d, int x, int y) {
     (void)d;
     g_ctx->ptr_x = x;
     g_ctx->ptr_y = y;
+    update_pointer_cursor();
     if (g_trace) fprintf(stderr, "[trace] enter %.0f,%.0f\n", g_ctx->ptr_x, g_ctx->ptr_y);
 }
 static void pointer_leave(void *d) {
@@ -1058,6 +1094,7 @@ static void pointer_motion(void *d, int x, int y) {
     (void)d;
     g_ctx->ptr_x = x;
     g_ctx->ptr_y = y;
+    update_pointer_cursor();
     if (g_grab_index >= 0) grabbed_follow_pointer();
     if (ringmenu_is_open(g_menu))
         ringmenu_motion(g_menu, (int)g_ctx->ptr_x, (int)g_ctx->ptr_y);
@@ -1459,6 +1496,7 @@ int main(int argc, char **argv) {
 
     ctx.needle_cursor = -1;
     ctx.hand_cursor = -1;
+    ctx.text_cursor = -1;
     PlatConfig plat_config = {
         .title = "Balloon Tasks!",
         .app_id = "balloon-tasks",
@@ -1571,6 +1609,9 @@ int main(int argc, char **argv) {
     }
     if (!create_hand_cursor(&ctx)) {
         fprintf(stderr, "balloon-tasks: no hand cursor, using the default pointer\n");
+    }
+    if (!create_text_cursor(&ctx)) {
+        fprintf(stderr, "balloon-tasks: no text cursor, using the default pointer\n");
     }
     update_pointer_cursor();
 
