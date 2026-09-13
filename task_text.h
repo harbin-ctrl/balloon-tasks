@@ -20,7 +20,8 @@ typedef struct {
 
 bool task_label_bitmap(const char *text, TaskBitmap *bitmap);
 bool task_panel_bitmap(const char *text, bool active, bool has_started,
-                      int tasks_left, size_t cursor, TaskBitmap *bitmap);
+                      int tasks_left, size_t cursor, bool close_pressed,
+                      TaskBitmap *bitmap);
 void task_bitmap_free(TaskBitmap *bitmap);
 
 #endif

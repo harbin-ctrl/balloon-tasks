@@ -639,6 +639,7 @@ static char g_task_input[TASK_TEXT_MAX + 1];
 static size_t g_task_cursor;
 static bool g_task_input_active = true;
 static bool g_tasks_started;
+static bool g_task_close_pressed;
 static bool g_task_panel_dirty = true;
 static GLuint g_task_panel_tex;
 
@@ -742,7 +743,8 @@ static void task_panel_update(void)
     }
     TaskBitmap bitmap;
     if (!task_panel_bitmap(g_task_input, g_task_input_active, g_tasks_started,
-                           tasks_left(), g_task_cursor, &bitmap)) {
+                           tasks_left(), g_task_cursor, g_task_close_pressed,
+                           &bitmap)) {
         return;
     }
     glBindTexture(GL_TEXTURE_2D, g_task_panel_tex);
@@ -776,6 +778,14 @@ static void task_cursor_from_pointer(void)
     if (cursor < 0) cursor = 0;
     if (cursor > length) cursor = length;
     g_task_cursor = (size_t)cursor;
+}
+
+static bool task_close_hit(double x, double y)
+{
+    int panel_x = task_panel_x();
+    int panel_y = task_panel_y();
+    return x >= panel_x + 6 && x < panel_x + 46 &&
+           y >= panel_y + 2 && y < panel_y + 40;
 }
 
 static bool task_add(const char *text)
@@ -1075,6 +1085,12 @@ static void pointer_button(void *d, PlatButton button, PlatPress press) {
     }
 
     if (button == PLAT_BTN_LEFT && pressed) {
+        if (task_close_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
+            g_task_close_pressed = true;
+            g_task_panel_dirty = true;
+            g_ctx->need_redraw = true;
+            return;
+        }
         if (task_panel_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
             int panel_y = task_panel_y();
             if (g_ctx->ptr_y >= panel_y + 42 && g_ctx->ptr_y < panel_y + 86) {
@@ -1092,6 +1108,17 @@ static void pointer_button(void *d, PlatButton button, PlatPress press) {
             g_task_input_active = false;
             task_input_changed();
         }
+    }
+
+    if (button == PLAT_BTN_LEFT && !pressed && g_task_close_pressed) {
+        bool close = task_close_hit(g_ctx->ptr_x, g_ctx->ptr_y);
+        g_task_close_pressed = false;
+        g_task_panel_dirty = true;
+        g_ctx->need_redraw = true;
+        if (close) {
+            trigger_quit();
+        }
+        return;
     }
 
     if (button == PLAT_BTN_MIDDLE) {

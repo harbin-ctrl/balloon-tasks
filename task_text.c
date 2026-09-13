@@ -104,7 +104,8 @@ bool task_label_bitmap(const char *value, TaskBitmap *bitmap)
 }
 
 bool task_panel_bitmap(const char *value, bool active, bool has_started,
-                       int tasks_left, size_t cursor, TaskBitmap *bitmap)
+                       int tasks_left, size_t cursor, bool close_pressed,
+                       TaskBitmap *bitmap)
 {
     if (!bitmap_alloc(bitmap, TASK_PANEL_WIDTH, TASK_PANEL_HEIGHT)) {
         return false;
@@ -125,7 +126,14 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
     fill(bitmap, bitmap->width - 3, 0, 3, bitmap->height, (Color) {
         57, 151, 255, 255
     });
-    text(bitmap, "New Task:", 14, 10, 1,
+    text(bitmap, "X", close_pressed ? 8 : 14, close_pressed ? 0 : 10,
+         close_pressed ? 2 : 1,
+    (Color) {
+        255, 255, 255, 255
+    }, (Color) {
+        3, 12, 30, 255
+    });
+    text(bitmap, "New Task", 52, 10, 1,
     (Color) {
         255, 255, 255, 255
     }, (Color) {
