@@ -642,6 +642,7 @@ enum {
 
 static int g_sprite_cap;
 static char g_task_input[TASK_TEXT_MAX + 1];
+static size_t g_task_cursor;
 static bool g_task_input_active = true;
 static bool g_tasks_started;
 static bool g_task_panel_dirty = true;
@@ -747,7 +748,7 @@ static void task_panel_update(void)
     }
     TaskBitmap bitmap;
     if (!task_panel_bitmap(g_task_input, g_task_input_active, g_tasks_started,
-                           tasks_left(), &bitmap)) {
+                           tasks_left(), g_task_cursor, &bitmap)) {
         return;
     }
     glBindTexture(GL_TEXTURE_2D, g_task_panel_tex);
@@ -771,6 +772,16 @@ static bool task_panel_hit(double x, double y)
     int panel_y = task_panel_y();
     return x >= panel_x && x < panel_x + TASK_PANEL_WIDTH &&
            y >= panel_y && y < panel_y + TASK_PANEL_HEIGHT;
+}
+
+static void task_cursor_from_pointer(void)
+{
+    int offset = (int)g_ctx->ptr_x - task_panel_x() - 23;
+    int cursor = (offset + TASK_TEXT_CHAR_WIDTH / 2) / TASK_TEXT_CHAR_WIDTH;
+    int length = (int)strlen(g_task_input);
+    if (cursor < 0) cursor = 0;
+    if (cursor > length) cursor = length;
+    g_task_cursor = (size_t)cursor;
 }
 
 static bool task_add(const char *text)
@@ -802,6 +813,7 @@ static bool task_add(const char *text)
     sprite->y = frandf() * y_range;
     g_nsprites++;
     g_tasks_started = true;
+    g_task_cursor = 0;
     g_task_panel_dirty = true;
     g_full_damage = true;
     g_ctx->need_redraw = true;
@@ -1085,10 +1097,16 @@ static void pointer_button(void *d, PlatButton button, PlatPress press) {
 
     if (button == PLAT_BTN_LEFT && pressed) {
         if (task_panel_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
+            int panel_y = task_panel_y();
+            if (g_ctx->ptr_y >= panel_y + 42 && g_ctx->ptr_y < panel_y + 86) {
+                task_cursor_from_pointer();
+            } else {
+                g_task_cursor = strlen(g_task_input);
+            }
             if (!g_task_input_active) {
                 g_task_input_active = true;
-                task_input_changed();
             }
+            task_input_changed();
             return;
         }
         if (g_task_input_active) {
@@ -1180,8 +1198,22 @@ static void key_press(void *d, PlatKey key, PlatPress press) {
                 g_task_input[0] = '\0';
                 task_input_changed();
             }
-        } else if (key == PLAT_KEY_BACKSPACE && length > 0) {
-            g_task_input[length - 1] = '\0';
+        } else if (key == PLAT_KEY_BACKSPACE && g_task_cursor > 0) {
+            memmove(g_task_input + g_task_cursor - 1,
+                    g_task_input + g_task_cursor,
+                    length - g_task_cursor + 1);
+            g_task_cursor--;
+            task_input_changed();
+        } else if (key == PLAT_KEY_DELETE && g_task_cursor < length) {
+            memmove(g_task_input + g_task_cursor,
+                    g_task_input + g_task_cursor + 1,
+                    length - g_task_cursor);
+            task_input_changed();
+        } else if (key == PLAT_KEY_LEFT && g_task_cursor > 0) {
+            g_task_cursor--;
+            task_input_changed();
+        } else if (key == PLAT_KEY_RIGHT && g_task_cursor < length) {
+            g_task_cursor++;
             task_input_changed();
         } else if (key == PLAT_KEY_ESC) {
             g_task_input_active = false;
@@ -1213,7 +1245,11 @@ static void text_input(void *d, const char *utf8) {
         if (*c < 0x20 || *c > 0x7E) {
             continue;
         }
-        g_task_input[length++] = (char)*c;
+        memmove(g_task_input + g_task_cursor + 1,
+                g_task_input + g_task_cursor,
+                length - g_task_cursor + 1);
+        g_task_input[g_task_cursor++] = (char)*c;
+        length++;
     }
     g_task_input[length] = '\0';
     task_input_changed();

@@ -104,7 +104,7 @@ bool task_label_bitmap(const char *value, TaskBitmap *bitmap)
 }
 
 bool task_panel_bitmap(const char *value, bool active, bool has_started,
-                       int tasks_left, TaskBitmap *bitmap)
+                       int tasks_left, size_t cursor, TaskBitmap *bitmap)
 {
     if (!bitmap_alloc(bitmap, TASK_PANEL_WIDTH, TASK_PANEL_HEIGHT)) {
         return false;
@@ -154,7 +154,7 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
         255, 255, 255, 255
     });
     if (active) {
-        int cursor_x = 23 + (int)strlen(value) * 16;
+        int cursor_x = 23 + (int)cursor * TASK_TEXT_CHAR_WIDTH;
         fill(bitmap, cursor_x, 51, 2, 21, (Color) {
             18, 92, 190, 255
         });
