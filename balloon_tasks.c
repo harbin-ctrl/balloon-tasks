@@ -608,6 +608,7 @@ static bool g_ghost = false;
 static double g_startup_fade = 0.0;
 static GLint g_fade_loc = -1;
 static GLint g_color_loc = -1;
+static void task_panel_hover_update(void);
 static void on_signal(int sig) { (void)sig; g_signal_quit = 1; }
 
 static void on_resize(void *data, int width, int height) {
@@ -617,6 +618,7 @@ static void on_resize(void *data, int width, int height) {
     ctx->resize_pending = true;
     g_full_damage = true;
     ctx->need_redraw = true;
+    task_panel_hover_update();
 }
 static Ctx *g_ctx;
 static Sprite *g_sprites;
@@ -642,6 +644,7 @@ static bool g_task_input_active = true;
 static bool g_tasks_started;
 static bool g_task_close_pressed;
 static bool g_task_panel_dragging;
+static bool g_task_panel_hovered;
 static int g_task_panel_drag_dx;
 static int g_task_panel_drag_dy;
 static int g_task_panel_x_override = -1;
@@ -755,6 +758,13 @@ static void task_panel_update(void)
                            &bitmap)) {
         return;
     }
+    if (!g_task_panel_hovered) {
+        size_t pixels = (size_t)bitmap.width * bitmap.height;
+        for (size_t i = 0; i < pixels; i++) {
+            bitmap.pixels[i * 4 + 3] =
+                (uint8_t)((bitmap.pixels[i * 4 + 3] * 7 + 5) / 10);
+        }
+    }
     glBindTexture(GL_TEXTURE_2D, g_task_panel_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bitmap.width, bitmap.height,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap.pixels);
@@ -776,6 +786,17 @@ static bool task_panel_hit(double x, double y)
     int panel_y = task_panel_y();
     return x >= panel_x && x < panel_x + TASK_PANEL_WIDTH &&
            y >= panel_y && y < panel_y + TASK_PANEL_HEIGHT;
+}
+
+static void task_panel_hover_update(void)
+{
+    bool hovered = task_panel_hit(g_ctx->ptr_x, g_ctx->ptr_y);
+    if (hovered == g_task_panel_hovered) {
+        return;
+    }
+    g_task_panel_hovered = hovered;
+    g_task_panel_dirty = true;
+    g_ctx->need_redraw = true;
 }
 
 static void task_cursor_from_pointer(void)
@@ -1093,11 +1114,17 @@ static void pointer_enter(void *d, int x, int y) {
     (void)d;
     g_ctx->ptr_x = x;
     g_ctx->ptr_y = y;
+    task_panel_hover_update();
     update_pointer_cursor();
     if (g_trace) fprintf(stderr, "[trace] enter %.0f,%.0f\n", g_ctx->ptr_x, g_ctx->ptr_y);
 }
 static void pointer_leave(void *d) {
     (void)d;
+    if (g_task_panel_hovered) {
+        g_task_panel_hovered = false;
+        g_task_panel_dirty = true;
+        g_ctx->need_redraw = true;
+    }
 }
 static void grabbed_follow_pointer(void) {
     Sprite *s = &g_sprites[g_grab_index];
@@ -1124,6 +1151,7 @@ static void pointer_motion(void *d, int x, int y) {
         g_full_damage = true;
         g_ctx->need_redraw = true;
     }
+    task_panel_hover_update();
     update_pointer_cursor();
     if (g_grab_index >= 0) grabbed_follow_pointer();
     if (ringmenu_is_open(g_menu))
