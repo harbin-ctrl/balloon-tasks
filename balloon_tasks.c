@@ -2014,8 +2014,12 @@ int main(int argc, char **argv) {
             g_quit_fade = 1.0;
         }
         
+        /* A fade repaints everything; report it all, or the compositor keeps
+           showing still areas (e.g. the task panel) at a faint frame. Set
+           before the fade advances so its final, opaque frame is full too. */
         if (g_quit_fade > 0.0 || g_startup_fade < 0.5) {
             ctx.need_redraw = true;
+            g_full_damage = true;
         }
 
         if (!plat_pump(ctx.plat, 0)) break;
