@@ -133,13 +133,17 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
     }, (Color) {
         3, 12, 30, 255
     });
-    text(bitmap, "New Task", 52, 10, 1,
+    const char *title = "New Task";
+    int title_x = (TASK_PANEL_WIDTH - (int)strlen(title) * TASK_TEXT_CHAR_WIDTH) / 2;
+    text(bitmap, title, title_x, 10, 1,
     (Color) {
         255, 255, 255, 255
     }, (Color) {
         3, 12, 30, 255
     });
-    text(bitmap, "ENTER TO ADD", 354, 12, 1,
+    const char *hint = "ENTER TO ADD";
+    int hint_x = TASK_PANEL_WIDTH - 14 - (int)strlen(hint) * TASK_TEXT_CHAR_WIDTH;
+    text(bitmap, hint, hint_x, 12, 1,
     (Color) {
         166, 205, 255, 255
     }, (Color) {
@@ -151,8 +155,8 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
 } : (Color) {
         89, 130, 179, 255
     };
-    fill(bitmap, 14, 42, 532, 44, border);
-    fill(bitmap, 17, 45, 526, 38, (Color) {
+    fill(bitmap, 14, 42, TASK_PANEL_WIDTH - 28, 44, border);
+    fill(bitmap, 17, 45, TASK_PANEL_WIDTH - 34, 38, (Color) {
         245, 248, 255, 245
     });
     text(bitmap, value, 23, 52, 1,
