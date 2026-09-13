@@ -38,10 +38,11 @@ names any that are missing), then run `make` from the repository root. To
 install, run `make install` there; it builds and installs the `ace-toys`
 package.
 
-On Windows, build in an MSYS2 CLANGARM64 (or CLANG64) shell with
-[Inno Setup 6](https://jrsoftware.org/isinfo.php) installed.
-`make installer` writes `installer/balloon-tasks-<version>-<arch>-setup.exe`,
-a per-user installer that can also start Balloon Tasks! at sign-in.
+On Windows, build in an MSYS2 shell with the CLANGARM64 and CLANG64
+toolchains and [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed.
+`make installer` builds both architectures and writes
+`installer/balloon-tasks-<version>-setup.exe`, one per-user installer for ARM64
+and x64 Windows that can also start Balloon Tasks! at sign-in.
 `make install` runs it silently; `make uninstall` removes it. Started at
 sign-in, Balloon Tasks! stays closed if it was last quit on purpose.
 

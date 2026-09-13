@@ -92,7 +92,7 @@ FORCE:
 
 clean:
 	$(RM) $(TARGET) $(OBJS) $(RES_OBJ) $(APP_ID).ico
-	$(RM) -r installer
+	$(RM) -r installer build
 	$(RM) xdg-*.h xdg-*.c balloon_assets.h thunder_pcm.h
 	$(RM) assets/.apngs_generated assets/.pops_generated
 
@@ -119,22 +119,43 @@ WINDRES ?= windres
 include $(WIN_DIR)/install.mk
 
 APP_VERSION := 0.1
-WIN_ARCH := $(if $(filter x86_64,$(MSYSTEM_CARCH)),x64,arm64)
 ISCC ?= $$(cygpath -u "$$LOCALAPPDATA")/Programs/Inno Setup 6/ISCC.exe
-INSTALLER := installer/$(APP_ID)-$(APP_VERSION)-$(WIN_ARCH)-setup.exe
+INSTALLER := installer/$(APP_ID)-$(APP_VERSION)-setup.exe
 # Keeps MSYS2 from rewriting /FLAG arguments into paths.
 WIN_NO_ARGCONV := MSYS2_ARG_CONV_EXCL='*'
+
+# One installer carries both architectures. Each builds with its own MSYS2
+# toolchain (CLANGARM64, CLANG64) in its own copy of the sources.
+WIN_ARCHES := arm64 x64
+WIN_BUILD := build/windows
+WIN_LIB_DIRS := toy-platform ring-menu toy-audio shared ace-packaging win-packaging
+# Sources only: build outputs belong to whichever architecture made them.
+WIN_COPY_EXCLUDES := --exclude=.git --exclude='*.o' --exclude='*.a' --exclude='*.exe' --exclude='*.ico'
+win_prefix = $(if $(filter x64,$(1)),/clang64,/clangarm64)
+win_env = MSYSTEM=$(if $(filter x64,$(1)),CLANG64,CLANGARM64) \
+	MSYSTEM_PREFIX=$(call win_prefix,$(1)) \
+	MSYSTEM_CARCH=$(if $(filter x64,$(1)),x86_64,aarch64) \
+	PATH="$(call win_prefix,$(1))/bin:$$PATH"
 
 .PHONY: installer
 
 # The Inno Setup installer; see balloon-tasks.iss.
-installer: $(TARGET) $(APP_ID).ico $(APP_ID).iss
-	rm -rf installer/stage
-	mkdir -p installer/stage
-	cp $(TARGET) installer/stage/
-	$(call win_runtime_dll_paths,$(TARGET)) | xargs -r -I{} cp {} installer/stage/
-	$(WIN_NO_ARGCONV) "$(ISCC)" /Q /DAppVersion=$(APP_VERSION) /DArch=$(WIN_ARCH) $(APP_ID).iss
+installer: $(addprefix installer-stage-,$(WIN_ARCHES)) $(APP_ID).ico $(APP_ID).iss
+	$(WIN_NO_ARGCONV) "$(ISCC)" /Q /DAppVersion=$(APP_VERSION) $(APP_ID).iss
 	@echo "installer: $(INSTALLER)"
+
+# installer/stage/<arch>: the program and the runtime DLLs it loads.
+installer-stage-%: FORCE
+	rm -rf $(WIN_BUILD)/$* installer/stage/$*
+	mkdir -p $(WIN_BUILD)/$*/$(APP_ID) installer/stage/$*
+	tar -c $(WIN_COPY_EXCLUDES) --exclude=./build --exclude=./installer . | \
+		tar -x -C $(WIN_BUILD)/$*/$(APP_ID)
+	tar -c -C "$(TOYS_ROOT)" $(WIN_COPY_EXCLUDES) $(WIN_LIB_DIRS) | tar -x -C $(WIN_BUILD)/$*
+	env $(call win_env,$*) $(MAKE) -C $(WIN_BUILD)/$*/$(APP_ID) TOYS_ROOT="$(CURDIR)/$(WIN_BUILD)/$*" $(TARGET)
+	cp $(WIN_BUILD)/$*/$(APP_ID)/$(TARGET) installer/stage/$*/
+	env $(call win_env,$*) ldd installer/stage/$*/$(TARGET) | \
+		awk -v prefix="$(call win_prefix,$*)/" 'index($$3, prefix) == 1 { print $$3 }' | \
+		sort -u | xargs -r -I{} cp {} installer/stage/$*/
 
 # Installs through the installer, replacing any earlier win-toys copy.
 install: installer

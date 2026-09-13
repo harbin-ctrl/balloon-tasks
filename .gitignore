@@ -3,6 +3,7 @@
 /*.exe
 /*.ico
 /installer/
+/build/
 
 /balloon_assets.h
 
