@@ -40,13 +40,13 @@ package.
 
 On Windows, build in an MSYS2 shell with the CLANGARM64 and CLANG64
 toolchains and [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed.
-`make installer` builds both architectures and writes
+`make inno` builds both architectures and writes the ready-to-ship
 `installer/balloon-tasks-<version>-setup.exe`, one per-user installer for ARM64
 and x64 Windows that can also start Balloon Tasks! at sign-in.
 `make install` runs it silently; `make uninstall` removes it.
 `tools\test-windows.ps1` then tests the installer, the sign-in start and the
-x64 build on this machine. Started at
-sign-in, Balloon Tasks! stays closed if it was last quit on purpose.
+x64 build on this machine. Started at sign-in, Balloon Tasks! stays closed if
+it was last quit on purpose.
 
 ## Usage
 

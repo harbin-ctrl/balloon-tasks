@@ -137,15 +137,15 @@ win_env = MSYSTEM=$(if $(filter x64,$(1)),CLANG64,CLANGARM64) \
 	MSYSTEM_CARCH=$(if $(filter x64,$(1)),x86_64,aarch64) \
 	PATH="$(call win_prefix,$(1))/bin:$$PATH"
 
-.PHONY: installer
+.PHONY: inno
 
 # The Inno Setup installer; see balloon-tasks.iss.
-installer: $(addprefix installer-stage-,$(WIN_ARCHES)) $(APP_ID).ico $(APP_ID).iss
+inno: $(addprefix inno-stage-,$(WIN_ARCHES)) $(APP_ID).ico $(APP_ID).iss
 	$(WIN_NO_ARGCONV) "$(ISCC)" /Q /DAppVersion=$(APP_VERSION) $(APP_ID).iss
 	@echo "installer: $(INSTALLER)"
 
 # installer/stage/<arch>: the program and the runtime DLLs it loads.
-installer-stage-%: FORCE
+inno-stage-%: FORCE
 	rm -rf $(WIN_BUILD)/$* installer/stage/$*
 	mkdir -p $(WIN_BUILD)/$*/$(APP_ID) installer/stage/$*
 	tar -c $(WIN_COPY_EXCLUDES) --exclude=./build --exclude=./installer . | \
@@ -158,7 +158,7 @@ installer-stage-%: FORCE
 		sort -u | xargs -r -I{} cp {} installer/stage/$*/
 
 # Installs through the installer, replacing any earlier win-toys copy.
-install: installer
+install: inno
 	$(call win_uninstall,$(APP_ID),$(APP_NAME))
 	$(WIN_NO_ARGCONV) "./$(INSTALLER)" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
 

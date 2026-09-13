@@ -1,5 +1,5 @@
 # Tests Balloon Tasks! as installed on Windows: the installer, the sign-in
-# autostart, and the x64 build. Run after `make installer`:
+# autostart, and the x64 build. Run after `make inno`:
 #
 #   powershell -ExecutionPolicy Bypass -File tools\test-windows.ps1 [-Only install,autostart,x64]
 #
@@ -189,7 +189,7 @@ function Test-X64 {
 }
 
 if (-not $setup) {
-    throw "No installer in $repo\installer; run make installer first."
+    throw "No installer in $repo\installer; run make inno first."
 }
 "installer: $($setup.Name)"
 $saved = if (Test-Path $prefs) { [IO.File]::ReadAllText($prefs) } else { $null }

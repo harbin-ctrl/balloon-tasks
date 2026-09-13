@@ -1,4 +1,4 @@
-; The Windows installer, built by `make installer` with Inno Setup 6.
+; The Windows installer, built by `make inno` with Inno Setup 6.
 ; One installer for ARM64 and x64 Windows; it installs the build that matches.
 ; Per user, so no administrator rights are needed:
 ;
