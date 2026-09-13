@@ -19,6 +19,7 @@
 #include "platform.h"
 #include "balloon_gen.h"
 #include "task_text.h"
+#include "title.h"
 #include "ghost_icon.h"
 #include "audio.h"
 #include "ringmenu.h"
@@ -651,6 +652,16 @@ static bool g_task_panel_hovered;
 static bool g_loading_prefs;
 static bool g_autostart;
 static bool g_closed_deliberately;
+
+/* Shown before the scene fades in, only when started by hand. */
+static Title *g_title;
+static double g_title_time;
+
+static bool title_showing(void)
+{
+    return g_title && title_playing(g_title_time);
+}
+
 static int g_task_panel_drag_dx;
 static int g_task_panel_drag_dy;
 static int g_task_panel_x_override = -1;
@@ -1382,6 +1393,9 @@ static void pointer_motion(void *d, int x, int y) {
 static void pointer_button(void *d, PlatButton button, PlatPress press) {
     (void)d;
     bool pressed = press == PLAT_PRESSED;
+    if (title_showing()) {
+        return;
+    }
 
     if (g_ghost) {
         if (pressed) {
@@ -1519,7 +1533,7 @@ static void pointer_lost(void *d) {
 }
 static void key_press(void *d, PlatKey key, PlatPress press) {
     (void)d;
-    if (press != PLAT_PRESSED) {
+    if (press != PLAT_PRESSED || title_showing()) {
         return;
     }
     if (g_task_input_active) {
@@ -1566,7 +1580,7 @@ static void key_press(void *d, PlatKey key, PlatPress press) {
 }
 static void text_input(void *d, const char *utf8) {
     (void)d;
-    if (!g_task_input_active) {
+    if (!g_task_input_active || title_showing()) {
         return;
     }
 
@@ -1858,6 +1872,12 @@ int main(int argc, char **argv) {
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); 
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
+    if (!g_autostart) {
+        g_title = title_create();
+        if (!g_title) {
+            fprintf(stderr, "balloon-tasks: no title screen\n");
+        }
+    }
     startup_mark("GL pipeline");
 
     {
@@ -2013,7 +2033,7 @@ int main(int argc, char **argv) {
         /* A fade repaints everything; report it all, or the compositor keeps
            showing still areas (e.g. the task panel) at a faint frame. Set
            before the fade advances so its final, opaque frame is full too. */
-        if (g_quit_fade > 0.0 || g_startup_fade < 0.5) {
+        if (g_quit_fade > 0.0 || g_startup_fade < 0.5 || title_showing()) {
             ctx.need_redraw = true;
             g_full_damage = true;
         }
@@ -2044,7 +2064,10 @@ int main(int argc, char **argv) {
             if (g_quit_fade <= 0.0) break;
         }
 
-        if (g_startup_fade < 0.5) {
+        /* The scene fades in once the title is gone. */
+        if (title_showing()) {
+            g_title_time += dt;
+        } else if (g_startup_fade < 0.5) {
             g_startup_fade += dt;
             if (g_startup_fade > 0.5) g_startup_fade = 0.5;
         }
@@ -2080,7 +2103,9 @@ int main(int argc, char **argv) {
 
         bool menu_open = ringmenu_is_open(g_menu);
         int region_count = 0;
-        if (menu_open) {
+        if (title_showing()) {
+            /* Clicks fall through to the desktop. */
+        } else if (menu_open) {
             ctx.input_rects[region_count++] = (PlatRect){ 0, 0, ctx.width, ctx.height };
         } else if (g_ghost) {
             ctx.input_rects[region_count++] = (PlatRect){
@@ -2276,6 +2301,10 @@ int main(int argc, char **argv) {
             draw_tex_quad(anim_tex[0][0], bx, by, bw, bh, ctx.width, ctx.height, 1);
         }
 
+        if (title_showing()) {
+            title_draw(g_title, g_title_time, ctx.width, ctx.height);
+        }
+
         if (menu_open) {
             if (g_fade_loc >= 0) glUniform1f(g_fade_loc, 1.0f);
             int mx, my, mw, mh;
@@ -2351,6 +2380,7 @@ int main(int argc, char **argv) {
         glDeleteTextures(1, &g_sprites[i].task_texture);
     }
     glDeleteTextures(1, &g_task_panel_tex);
+    title_destroy(g_title);
     ringmenu_destroy(g_menu);
     free(g_menu_scratch);
     free(g_sprites);
