@@ -63,6 +63,10 @@ License. Normal builds use the ready-made PNGs. To regenerate them, run
 `python3 -m pip install -r tools/requirements-icons.txt`, then
 `make regen-icons`.
 
+Task text uses Fredoka Bold, also under the SIL Open Font License, baked
+into the committed `task_font.h`. To regenerate it, or switch fonts via
+`FONT_PATH` in `tools/make_task_font.py`, run `make regen-font`.
+
 Controls:
 - **New Task:** type a task of up to 32 characters and press **Enter** to create it.
 - **Click the task panel** to return keyboard input to the field.

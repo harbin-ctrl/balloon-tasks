@@ -68,7 +68,7 @@ balloon_tasks.o: balloon_tasks.c balloon_gen.h task_text.h audio.h cursor_hand_g
 balloon_gen.o: balloon_gen.c balloon_gen.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-task_text.o: task_text.c task_text.h task_font.h assets/fonts/Baloo2-Variable.ttf
+task_text.o: task_text.c task_text.h task_font.h assets/fonts/Fredoka-Variable.ttf
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 audio.o: audio.c audio.h $(TOYAUDIO_DIR)/toy_audio.h \
@@ -118,6 +118,9 @@ $(ICON_FILES):
 
 regen-icons:
 	$(PYTHON) tools/make_icon.py
+
+regen-font:
+	$(PYTHON) tools/make_task_font.py
 
 ifeq ($(PLATFORM),win32)
 WIN_DIR ?= $(TOYS_ROOT)/win-packaging
