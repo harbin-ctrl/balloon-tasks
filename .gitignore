@@ -1,6 +1,7 @@
 *.o
-/balloons
-/icon_maker
+/balloon-tasks
+/*.exe
+/*.ico
 
 /balloon_assets.h
 
@@ -9,5 +10,3 @@
 /xdg-*.h
 /xdg-*.c
 /assets/*.apng
-/assets/icon*.png
-/assets/icon.png

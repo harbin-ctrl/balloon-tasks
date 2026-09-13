@@ -10,18 +10,24 @@ endif
 CCACHE_PREFIX ?= distcc
 export CC CCACHE_PREFIX
 
+# The shared toy libraries normally live beside this checkout. TOYS_ROOT can
+# point at another ace-toys/win-toys checkout for a standalone clone.
+TOYS_ROOT ?= $(abspath $(CURDIR)/..)
+
 # The window system and audio backend follow the host: Win32 and WASAPI on
-# Windows, Wayland and PipeWire everywhere else. See ../toy-platform.
-include $(CURDIR)/../toy-platform/platform.mk
+# Windows, Wayland and PipeWire everywhere else.
+include $(TOYS_ROOT)/toy-platform/platform.mk
 
 CFLAGS := -O3 -ffast-math -Wall -pthread $(TOY_PLATFORM_CFLAGS)
 LIBS   := $(TOY_PLATFORM_LIBS) -lm -pthread
 
-TARGET  := balloons$(EXE)
-RINGMENU_DIR ?= $(CURDIR)/../ring-menu
+APP_ID   := balloon-tasks
+APP_NAME := Balloon Tasks!
+TARGET   := $(APP_ID)$(EXE)
+RINGMENU_DIR ?= $(TOYS_ROOT)/ring-menu
 RINGMENU_LIB := $(RINGMENU_DIR)/libringmenu.a
-TOYAUDIO_DIR ?= $(CURDIR)/../toy-audio
-ACE_DIR ?= $(CURDIR)/../ace-packaging
+TOYAUDIO_DIR ?= $(TOYS_ROOT)/toy-audio
+ACE_DIR ?= $(TOYS_ROOT)/ace-packaging
 TOYAUDIO_LIB := $(TOYAUDIO_DIR)/libtoyaudio.a
 ifeq ($(PLATFORM),win32)
 include $(TOYAUDIO_DIR)/wasapi.mk
@@ -33,19 +39,14 @@ CFLAGS  += $(TOY_AUDIO_PIPEWIRE_CFLAGS)
 LIBS    += $(TOY_AUDIO_PIPEWIRE_LIBS)
 endif
 CFLAGS  += -I$(RINGMENU_DIR) -I$(TOYAUDIO_DIR)
-GHOSTICON_DIR := $(CURDIR)/../shared
+GHOSTICON_DIR ?= $(TOYS_ROOT)/shared
 GHOSTICON_LIB := $(GHOSTICON_DIR)/libghosticon.a
 
-# lodepng is only for icon_maker, which encodes the .png desktop icons.
-# The toy itself decodes nothing: all its graphics are generated, and the
-# grab cursor is compiled in as raw pixels (cursor_hand_grab.h).
-LODEPNG_DIR := $(CURDIR)/../third_party/lodepng
-LODEPNG_LIB := $(LODEPNG_DIR)/liblodepng.a
-OBJS    := balloons.o balloon_gen.o thunder_synth.o audio.o
+OBJS    := balloon_tasks.o balloon_gen.o thunder_synth.o audio.o
 TOY_LIBS := $(RINGMENU_LIB) $(TOYAUDIO_LIB) $(GHOSTICON_LIB) $(TOYPLATFORM_LIB)
 ifeq ($(PLATFORM),win32)
 # The icon, embedded so the taskbar, Explorer and the shortcut all show it.
-RES_OBJ := balloons_res.o
+RES_OBJ := $(APP_ID)_res.o
 else
 RES_OBJ :=
 endif
@@ -53,14 +54,14 @@ endif
 PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
 
-.PHONY: all clean install uninstall stage icons
+.PHONY: all clean install uninstall stage icons regen-icons
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS) $(RES_OBJ) $(TOY_LIBS)
 	$(CC) -o $@ $(OBJS) $(RES_OBJ) $(TOY_LIBS) $(LIBS) $(APP_LDFLAGS)
 
-balloons.o: balloons.c balloon_gen.h audio.h cursor_hand_grab.h $(RINGMENU_DIR)/ringmenu.h \
+balloon_tasks.o: balloon_tasks.c balloon_gen.h audio.h cursor_hand_grab.h $(RINGMENU_DIR)/ringmenu.h \
 	$(GHOSTICON_DIR)/ghost_icon.h $(TOYPLATFORM_DIR)/platform.h $(TOYPLATFORM_DIR)/compat.h
 	$(CC) $(CFLAGS) -I$(GHOSTICON_DIR) -c -o $@ $<
 
@@ -87,49 +88,51 @@ $(TOYPLATFORM_LIB): FORCE
 FORCE:
 
 clean:
-	$(RM) $(TARGET) $(OBJS) $(RES_OBJ) balloons.ico
-	$(RM) xdg-*.h xdg-*.c icon_maker$(EXE) icon_maker.o balloon_assets.h thunder_pcm.h
-	$(RM) assets/*.apng assets/icon*.png assets/icon.png
+	$(RM) $(TARGET) $(OBJS) $(RES_OBJ) $(APP_ID).ico
+	$(RM) xdg-*.h xdg-*.c balloon_assets.h thunder_pcm.h
 	$(RM) assets/.apngs_generated assets/.pops_generated
 
 ICON_SIZES    := 16 32 48 64 128 256 512
+ICON_FILES    := $(foreach size,$(ICON_SIZES),assets/icon_$(size)x$(size).png)
+PYTHON        ?= python3
 
 DATADIR := $(PREFIX)/share
 
 include $(ACE_DIR)/install.mk
 
-icon_maker.o: CFLAGS := -O3 -Wall -I$(CURDIR)/../third_party/lodepng
-icon_maker$(EXE): icon_maker.o $(LODEPNG_LIB)
-	$(CC) -o $@ $^ -lm
+icons: $(ICON_FILES)
 
-icons: icon_maker$(EXE)
-	./icon_maker$(EXE) assets
+$(ICON_FILES):
+	@echo "Missing $@; run 'make regen-icons'" >&2
+	@exit 1
+
+regen-icons:
+	$(PYTHON) tools/make_icon.py
 
 ifeq ($(PLATFORM),win32)
-WIN_DIR ?= $(CURDIR)/../win-packaging
+WIN_DIR ?= $(TOYS_ROOT)/win-packaging
 WINDRES ?= windres
 include $(WIN_DIR)/install.mk
 
 # One per-user win-toys folder and a shortcut in the Start menu's Ace folder,
 # as the ace-toys package installs on Linux. See win-packaging/install.mk.
 install: $(TARGET)
-	$(call win_install,balloons,Balloons,$(TARGET))
+	$(call win_install,$(APP_ID),$(APP_NAME),$(TARGET))
 
 uninstall:
-	$(call win_uninstall,balloons,Balloons)
+	$(call win_uninstall,$(APP_ID),$(APP_NAME))
 
 # Into the package the root Makefile's `package` builds.
 stage: $(TARGET)
-	$(call win_stage,balloons,Balloons,$(TARGET),$(DESTDIR))
+	$(call win_stage,$(APP_ID),$(APP_NAME),$(TARGET),$(DESTDIR))
 
 # An .ico entry holds at most 256 px.
 ICO_SIZES := 16 32 48 64 128 256
 
-balloons.ico: icon_maker$(EXE)
-	./icon_maker$(EXE) assets
+$(APP_ID).ico: $(foreach size,$(ICO_SIZES),assets/icon_$(size)x$(size).png)
 	$(call win_ico,$@,$(foreach size,$(ICO_SIZES),assets/icon_$(size)x$(size).png))
 
-balloons_res.o: balloons.rc balloons.ico
+$(APP_ID)_res.o: $(APP_ID).rc $(APP_ID).ico
 	$(WINDRES) $< -O coff -o $@
 else
 # System install: binary plus the desktop entry, Ace menu and
@@ -139,10 +142,10 @@ else
 # package's triggers refresh the real ones.
 install: $(TARGET) icons ace-install
 	install -Dm755 $(TARGET) "$(DESTDIR)$(BINDIR)/$(TARGET)"
-	install -Dm644 balloons.desktop "$(DESTDIR)$(DATADIR)/applications/balloons.desktop"
+	install -Dm644 $(APP_ID).desktop "$(DESTDIR)$(DATADIR)/applications/$(APP_ID).desktop"
 	for size in $(ICON_SIZES); do \
 		install -Dm644 assets/icon_$${size}x$${size}.png \
-			"$(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/balloons.png"; \
+			"$(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/$(APP_ID).png"; \
 	done
 	if [ -z "$(DESTDIR)" ]; then \
 		update-desktop-database "$(DESTDIR)$(DATADIR)/applications" 2>/dev/null || true; \
@@ -151,9 +154,9 @@ install: $(TARGET) icons ace-install
 
 uninstall: ace-uninstall
 	$(RM) "$(DESTDIR)$(BINDIR)/$(TARGET)"
-	$(RM) "$(DESTDIR)$(DATADIR)/applications/balloons.desktop"
+	$(RM) "$(DESTDIR)$(DATADIR)/applications/$(APP_ID).desktop"
 	for size in $(ICON_SIZES); do \
-		$(RM) "$(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/balloons.png"; \
+		$(RM) "$(DESTDIR)$(DATADIR)/icons/hicolor/$${size}x$${size}/apps/$(APP_ID).png"; \
 	done
 	if [ -z "$(DESTDIR)" ]; then \
 		update-desktop-database "$(DESTDIR)$(DATADIR)/applications" 2>/dev/null || true; \

@@ -529,7 +529,7 @@ bool audio_is_muted(void) {
 }
 
 
-static void balloons_render(void *userdata, float *output,
+static void balloon_tasks_render(void *userdata, float *output,
                             uint32_t nframes, uint32_t channels) {
     (void)userdata;
     (void)channels;
@@ -685,7 +685,7 @@ bool audio_init(void) {
         !toy_sample_pair_alloc(&audio_state.thump,
                                (int)(THUMP_SOUND_SECONDS * SAMPLE_RATE)) ||
         !toy_sample_pair_alloc(&audio_state.whoosh, WHOOSH_CAPACITY_SAMPLES)) {
-        fprintf(stderr, "balloons: failed to allocate audio sample buffers\n");
+        fprintf(stderr, "balloon-tasks: failed to allocate audio sample buffers\n");
         audio_shutdown();
         return false;
     }
@@ -694,7 +694,7 @@ bool audio_init(void) {
     for (int p = 0; p < POP_VARIATIONS; ++p) {
         if (!toy_sample_pair_alloc(&g_pop_variations[p],
                                    (int)(POP_SOUND_SECONDS * SAMPLE_RATE))) {
-            fprintf(stderr, "balloons: failed to allocate audio sample buffers\n");
+            fprintf(stderr, "balloon-tasks: failed to allocate audio sample buffers\n");
             audio_shutdown();
             return false;
         }
@@ -719,7 +719,7 @@ bool audio_init(void) {
             thunder_jobs[c].ok = build_thunder_clip(&g_thunder[c], c);
         }
         if (!thunder_jobs[c].ok) {
-            fprintf(stderr, "balloons: failed to build thunder clip %d\n", c);
+            fprintf(stderr, "balloon-tasks: failed to build thunder clip %d\n", c);
             thunder_ok = false;
         }
     }
@@ -729,7 +729,7 @@ bool audio_init(void) {
     }
     if (!toy_mixer_reserve(&g_mixer, THUNDER_CLIP_SECONDS * SAMPLE_RATE) ||
         !toy_audio_reserve_scratch(THUNDER_CLIP_SECONDS * SAMPLE_RATE)) {
-        fprintf(stderr, "balloons: failed to allocate audio mixer workspace\n");
+        fprintf(stderr, "balloon-tasks: failed to allocate audio mixer workspace\n");
         audio_shutdown();
         return false;
     }
@@ -738,21 +738,21 @@ bool audio_init(void) {
     if (pthread_create(&g_synth_thread, NULL, synth_thread_main, NULL) == 0) {
         g_synth_thread_running = true;
     } else {
-        fprintf(stderr, "balloons: no synthesis thread; breezes will be silent\n");
+        fprintf(stderr, "balloon-tasks: no synthesis thread; breezes will be silent\n");
     }
 
     ToyAudioStreamConfig stream_config = {
-        .name = "balloons",
-        .description = "Balloons",
+        .name = "balloon-tasks",
+        .description = "Balloon Tasks!",
         .sample_rate = SAMPLE_RATE,
         .channels = 2,
-        .render = balloons_render,
+        .render = balloon_tasks_render,
         .userdata = NULL,
     };
     g_audio_stream = toy_audio_stream_start(&stream_config);
     if (!g_audio_stream) {
         fprintf(stderr,
-                "balloons: failed to start audio; quitting\n");
+                "balloon-tasks: failed to start audio; quitting\n");
         audio_shutdown();
         return false;
     }

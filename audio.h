@@ -1,5 +1,5 @@
-#ifndef BALLOONS_AUDIO_H
-#define BALLOONS_AUDIO_H
+#ifndef BALLOON_TASKS_AUDIO_H
+#define BALLOON_TASKS_AUDIO_H
 
 #include <stdbool.h>
 
@@ -40,4 +40,4 @@ bool audio_is_muted(void);
 
 void set_bounce_sound_style(BounceSoundStyle style);
 
-#endif /* BALLOONS_AUDIO_H */
+#endif /* BALLOON_TASKS_AUDIO_H */

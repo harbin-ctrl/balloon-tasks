@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Balloon Tasks!
+Comment=Interactive balloons floating on your desktop
+Exec=balloon-tasks
+Icon=balloon-tasks
+Terminal=false
+Categories=Ace;

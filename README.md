@@ -1,4 +1,4 @@
-# Balloons (Wayland Demo)
+# Balloon Tasks!
 
 Plays APNG balloons floating up on the desktop: no window, no border, transparent
 wherever the APNG is transparent, and click-through everywhere except the
@@ -37,8 +37,15 @@ package.
 Simply run:
 
 ```bash
-balloons
+balloon-tasks
 ```
+
+## Icon
+
+The committed desktop icons use Baloo 2 ExtraBold under the SIL Open Font
+License. Normal builds use the ready-made PNGs. To regenerate them, run
+`python3 -m pip install -r tools/requirements-icons.txt`, then
+`make regen-icons`.
 
 Controls:
 - **Left-click** a balloon to bop it (it will bob and react to the poke, with a soft thump).
@@ -67,7 +74,7 @@ is the exact easing curve the breeze physics drives the wind through, so
 the swell and die-down you hear are precisely what the balloons do. The
 sound and the motion are aligned by inverting Poingo's predictive-audio
 trick — Poingo predicts its physics and sends sound early to beat the
-output latency; balloons owns the gust clock, so it sends the whoosh on
+output latency; Balloon Tasks! owns the gust clock, so it sends the whoosh on
 time and holds the visible wind back by the measured latency instead.
 Nobody knows when a breeze was "supposed" to start, so the hold is free —
 and on high-latency outputs like Bluetooth it keeps the wind and the
@@ -80,7 +87,7 @@ strike's distance sets how long the thunder lags the flash and how soft it
 lands.
 
 Output goes through the native PipeWire stream managed by `libtoyaudio`.
-Balloons sends explicit `FL,FR` floating-point stereo at 48 kHz and reads
+Balloon Tasks! sends explicit `FL,FR` floating-point stereo at 48 kHz and reads
 PipeWire's queued, buffered, graph, and device delay for the gust timing
 described above.
 

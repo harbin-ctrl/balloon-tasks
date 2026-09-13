@@ -38,7 +38,7 @@ static double startup_elapsed_ms(void) {
 
 static void startup_mark(const char *phase) {
     if (g_startup_trace) {
-        fprintf(stderr, "[balloons startup] %-24s %8.1f ms\n",
+        fprintf(stderr, "[balloon-tasks startup] %-24s %8.1f ms\n",
                 phase, startup_elapsed_ms());
     }
 }
@@ -812,7 +812,7 @@ static void render_hand_cursor(uint32_t *px, int size) {
 
     for (int y = 0; y < CURSOR_HAND_GRAB_H; ++y) {
         memcpy(px + (size_t)y * size,
-               balloons_cursor_hand_grab_argb + (size_t)y * CURSOR_HAND_GRAB_W,
+               balloon_tasks_cursor_hand_grab_argb + (size_t)y * CURSOR_HAND_GRAB_W,
                (size_t)CURSOR_HAND_GRAB_W * sizeof(*px));
     }
 }
@@ -1108,7 +1108,7 @@ int main(int argc, char **argv) {
     int nfiles = 0;
 
     clock_gettime(CLOCK_MONOTONIC, &g_startup_t0);
-    g_startup_trace = getenv("BALLOONS_STARTUP_TRACE") != NULL;
+    g_startup_trace = getenv("BALLOON_TASKS_STARTUP_TRACE") != NULL;
     startup_mark("begin");
     srand((unsigned)time(NULL) ^ (unsigned)getpid());
     g_trace = getenv("APNGO_TRACE") != NULL;
@@ -1134,7 +1134,7 @@ int main(int argc, char **argv) {
      * below. They are joined before any generated pixels are uploaded. */
     Anim *anims = NULL;
     if (!startup_jobs.assets_ok && !assets_thread_started) {
-        fprintf(stderr, "balloons: failed to generate runtime assets\n");
+        fprintf(stderr, "balloon-tasks: failed to generate runtime assets\n");
         return 1;
     }
 
@@ -1153,8 +1153,8 @@ int main(int argc, char **argv) {
     ctx.needle_cursor = -1;
     ctx.hand_cursor = -1;
     PlatConfig plat_config = {
-        .title = "balloons",
-        .app_id = "balloons",
+        .title = "Balloon Tasks!",
+        .app_id = "balloon-tasks",
         .log = g_trace ? PLAT_LOG_DEBUG : PLAT_LOG_QUIET,
         .damage = getenv("APNGO_NO_DAMAGE") ? PLAT_DAMAGE_OFF : PLAT_DAMAGE_AUTO,
     };
@@ -1165,10 +1165,10 @@ int main(int argc, char **argv) {
     if (audio_thread_started) pthread_join(audio_thread, NULL);
     if (assets_thread_started) pthread_join(assets_thread, NULL);
     if (!startup_jobs.audio_ok) {
-        fprintf(stderr, "balloons: audio initialization failed; continuing silently\n");
+        fprintf(stderr, "balloon-tasks: audio initialization failed; continuing silently\n");
     }
     if (!startup_jobs.assets_ok) {
-        fprintf(stderr, "balloons: failed to generate runtime assets\n");
+        fprintf(stderr, "balloon-tasks: failed to generate runtime assets\n");
         return 1;
     }
     anims = startup_jobs.anims;
@@ -1181,7 +1181,7 @@ int main(int argc, char **argv) {
     audio_pregen_async();
 
     if (!find_alpha_bounds(&anims[0], &g_ghost_balloon_bounds)) {
-        fprintf(stderr, "balloons: unable to measure ghost icon source\n");
+        fprintf(stderr, "balloon-tasks: unable to measure ghost icon source\n");
         return 1;
     }
 
@@ -1233,12 +1233,12 @@ int main(int argc, char **argv) {
             { .label = "QUIT" },
         };
         g_menu = ringmenu_create(items, 6);
-    if (!g_menu) fprintf(stderr, "balloons: no ring menu\n");
+    if (!g_menu) fprintf(stderr, "balloon-tasks: no ring menu\n");
     if (g_menu) {
         int menu_size = ringmenu_size(g_menu);
         g_menu_scratch = malloc((size_t)menu_size * menu_size * 4);
         if (!g_menu_scratch) {
-            fprintf(stderr, "balloons: failed to allocate menu workspace\n");
+            fprintf(stderr, "balloon-tasks: failed to allocate menu workspace\n");
             ringmenu_destroy(g_menu);
             g_menu = NULL;
         }
@@ -1252,10 +1252,10 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     if (!create_needle_cursor(&ctx)) {
-        fprintf(stderr, "balloons: no needle cursor, using the default pointer\n");
+        fprintf(stderr, "balloon-tasks: no needle cursor, using the default pointer\n");
     }
     if (!create_hand_cursor(&ctx)) {
-        fprintf(stderr, "balloons: no hand cursor, using the default pointer\n");
+        fprintf(stderr, "balloon-tasks: no hand cursor, using the default pointer\n");
     }
     update_pointer_cursor();
 
@@ -1354,8 +1354,8 @@ int main(int argc, char **argv) {
         plat_input_region(ctx.plat, NULL, 0);
     }
 
-    if (getenv("BALLOONS_TEST_STORM")) start_storm();
-    if (getenv("BALLOONS_TEST_THUNDER")) {
+    if (getenv("BALLOON_TASKS_TEST_STORM")) start_storm();
+    if (getenv("BALLOON_TASKS_TEST_THUNDER")) {
         start_storm();
         lightning_strike();
     }

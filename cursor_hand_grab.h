@@ -1,6 +1,6 @@
-/* Grab cursor for balloons, as premultiplied ARGB32 pixels.
+/* Grab cursor for Balloon Tasks!, as premultiplied ARGB32 pixels.
  *
- * Raw pixels rather than an embedded PNG: this is the only image balloons
+ * Raw pixels rather than an embedded PNG: this is the only image Balloon Tasks!
  * does not generate procedurally, and decoding it was the sole remaining
  * reason the toy linked lodepng. At 45x45 the array is 8100 bytes, which is
  * cheaper than carrying a PNG decoder to unpack 1906 bytes.
@@ -11,15 +11,15 @@
  *
  * Premultiplied to match WL_SHM_FORMAT_ARGB8888, so it blits straight in.
  */
-#ifndef BALLOONS_CURSOR_HAND_GRAB_H
-#define BALLOONS_CURSOR_HAND_GRAB_H
+#ifndef BALLOON_TASKS_CURSOR_HAND_GRAB_H
+#define BALLOON_TASKS_CURSOR_HAND_GRAB_H
 
 #include <stdint.h>
 
 #define CURSOR_HAND_GRAB_W 45
 #define CURSOR_HAND_GRAB_H 45
 
-static const uint32_t balloons_cursor_hand_grab_argb[2025] = {
+static const uint32_t balloon_tasks_cursor_hand_grab_argb[2025] = {
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
     0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
@@ -360,4 +360,4 @@ static const uint32_t balloons_cursor_hand_grab_argb[2025] = {
     0x00000000, 0x00000000, 0x00000000,
 };
 
-#endif /* BALLOONS_CURSOR_HAND_GRAB_H */
+#endif /* BALLOON_TASKS_CURSOR_HAND_GRAB_H */
