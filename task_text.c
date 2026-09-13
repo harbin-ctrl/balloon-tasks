@@ -112,7 +112,7 @@ bool task_panel_bitmap(const char *value, bool active, bool has_started,
     }
 
     fill(bitmap, 0, 0, bitmap->width, bitmap->height, (Color) {
-        7, 19, 42, 225
+        7, 19, 42, 204
     });
     fill(bitmap, 0, 0, bitmap->width, 3, (Color) {
         57, 151, 255, 255
