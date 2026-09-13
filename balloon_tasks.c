@@ -641,16 +641,23 @@ static size_t g_task_cursor;
 static bool g_task_input_active = true;
 static bool g_tasks_started;
 static bool g_task_close_pressed;
+static bool g_task_panel_dragging;
+static int g_task_panel_drag_dx;
+static int g_task_panel_drag_dy;
+static int g_task_panel_x_override = -1;
+static int g_task_panel_y_override = -1;
 static bool g_task_panel_dirty = true;
 static GLuint g_task_panel_tex;
 
 static int task_panel_x(void)
 {
+    if (g_task_panel_x_override >= 0) return g_task_panel_x_override;
     return (g_ctx->width - TASK_PANEL_WIDTH) / 2;
 }
 
 static int task_panel_y(void)
 {
+    if (g_task_panel_y_override >= 0) return g_task_panel_y_override;
     int y = g_ctx->height - TASK_PANEL_HEIGHT - TASK_PANEL_MARGIN;
     return y > TASK_PANEL_MARGIN ? y : TASK_PANEL_MARGIN;
 }
@@ -1101,6 +1108,22 @@ static void pointer_motion(void *d, int x, int y) {
     (void)d;
     g_ctx->ptr_x = x;
     g_ctx->ptr_y = y;
+    if (g_task_panel_dragging) {
+        int panel_x = (int)g_ctx->ptr_x - g_task_panel_drag_dx;
+        int panel_y = (int)g_ctx->ptr_y - g_task_panel_drag_dy;
+        int max_x = g_ctx->width - TASK_PANEL_WIDTH;
+        int max_y = g_ctx->height - TASK_PANEL_HEIGHT;
+        if (max_x < 0) max_x = 0;
+        if (max_y < 0) max_y = 0;
+        if (panel_x < 0) panel_x = 0;
+        if (panel_y < 0) panel_y = 0;
+        if (panel_x > max_x) panel_x = max_x;
+        if (panel_y > max_y) panel_y = max_y;
+        g_task_panel_x_override = panel_x;
+        g_task_panel_y_override = panel_y;
+        g_full_damage = true;
+        g_ctx->need_redraw = true;
+    }
     update_pointer_cursor();
     if (g_grab_index >= 0) grabbed_follow_pointer();
     if (ringmenu_is_open(g_menu))
@@ -1139,19 +1162,27 @@ static void pointer_button(void *d, PlatButton button, PlatPress press) {
             int panel_y = task_panel_y();
             if (g_ctx->ptr_y >= panel_y + 42 && g_ctx->ptr_y < panel_y + 86) {
                 task_cursor_from_pointer();
+                if (!g_task_input_active) {
+                    g_task_input_active = true;
+                }
+                task_input_changed();
             } else {
-                g_task_cursor = strlen(g_task_input);
+                g_task_panel_dragging = true;
+                g_task_panel_drag_dx = (int)g_ctx->ptr_x - task_panel_x();
+                g_task_panel_drag_dy = (int)g_ctx->ptr_y - task_panel_y();
             }
-            if (!g_task_input_active) {
-                g_task_input_active = true;
-            }
-            task_input_changed();
             return;
         }
         if (g_task_input_active) {
             g_task_input_active = false;
             task_input_changed();
         }
+    }
+
+    if (button == PLAT_BTN_LEFT && !pressed && g_task_panel_dragging) {
+        g_task_panel_dragging = false;
+        update_pointer_cursor();
+        return;
     }
 
     if (button == PLAT_BTN_LEFT && !pressed && g_task_close_pressed) {
