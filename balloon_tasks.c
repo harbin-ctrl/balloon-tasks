@@ -649,6 +649,8 @@ static bool g_task_close_pressed;
 static bool g_task_panel_dragging;
 static bool g_task_panel_hovered;
 static bool g_loading_prefs;
+static bool g_autostart;
+static bool g_closed_deliberately;
 static int g_task_panel_drag_dx;
 static int g_task_panel_drag_dy;
 static int g_task_panel_x_override = -1;
@@ -918,9 +920,10 @@ static void prefs_save(void)
 
     FILE *file = fopen(temp, "wb");
     if (!file) return;
-    fprintf(file, "BALLOON_TASKS_PREFS 1\n");
+    fprintf(file, "BALLOON_TASKS_PREFS 2\n");
     fprintf(file, "window %d %d\n", task_panel_x(), task_panel_y());
     fprintf(file, "started %d\n", g_tasks_started ? 1 : 0);
+    fprintf(file, "closed %d\n", g_closed_deliberately ? 1 : 0);
     fprintf(file, "count %d\n", tasks_left());
     for (int i = 0; i < g_nsprites; i++) {
         Sprite *sprite = &g_sprites[i];
@@ -943,19 +946,22 @@ static void prefs_reset(const char *path)
     g_tasks_started = false;
 }
 
-static void prefs_load(void)
+static bool prefs_load(bool *closed_previous)
 {
+    *closed_previous = false;
     char path[PREFS_PATH_MAX];
-    if (!prefs_path(path, sizeof(path))) return;
+    if (!prefs_path(path, sizeof(path))) return false;
     FILE *file = fopen(path, "rb");
-    if (!file) return;
+    if (!file) return false;
 
     PrefTask tasks[PREFS_MAX_TASKS];
     char line[256];
-    int window_x, window_y, started, count;
+    int window_x, window_y, started, closed = 0, count;
     char extra;
-    bool valid = prefs_line(file, line, sizeof(line)) &&
-                 strcmp(line, "BALLOON_TASKS_PREFS 1") == 0;
+    /* Version 1 predates the closed line. */
+    bool valid = prefs_line(file, line, sizeof(line));
+    bool has_closed = valid && strcmp(line, "BALLOON_TASKS_PREFS 2") == 0;
+    valid = has_closed || (valid && strcmp(line, "BALLOON_TASKS_PREFS 1") == 0);
     if (valid) {
         valid = prefs_line(file, line, sizeof(line)) &&
                 sscanf(line, "window %d %d %c", &window_x, &window_y, &extra) == 2;
@@ -963,6 +969,10 @@ static void prefs_load(void)
     if (valid) {
         valid = prefs_line(file, line, sizeof(line)) &&
                 prefs_parse_int(line + 8, &started) && (started == 0 || started == 1);
+    }
+    if (valid && has_closed) {
+        valid = prefs_line(file, line, sizeof(line)) &&
+                prefs_parse_int(line + 7, &closed) && (closed == 0 || closed == 1);
     }
     if (valid) {
         valid = prefs_line(file, line, sizeof(line)) &&
@@ -1009,18 +1019,19 @@ static void prefs_load(void)
     fclose(file);
     if (!valid) {
         prefs_reset(path);
-        return;
+        return false;
     }
 
     g_task_panel_x_override = window_x;
     g_task_panel_y_override = window_y;
     g_tasks_started = started != 0;
+    *closed_previous = closed != 0;
     g_loading_prefs = true;
     for (int i = 0; i < count; i++) {
         if (!task_add_with_color(tasks[i].text, tasks[i].color)) {
             g_loading_prefs = false;
             prefs_reset(path);
-            return;
+            return false;
         }
     }
     g_loading_prefs = false;
@@ -1028,6 +1039,7 @@ static void prefs_load(void)
     g_task_panel_dirty = true;
     g_full_damage = true;
     g_ctx->need_redraw = true;
+    return true;
 }
 
 static void pop_sprite(Sprite *s, float pop_x, float pop_y) {
@@ -1073,7 +1085,11 @@ static void start_mass_pop(bool then_quit) {
     }
 }
 
+/* Every quit the user asks for comes through here. Logout and shutdown do
+   not, so an autostart can tell them apart. */
 static void trigger_quit(void) {
+    g_closed_deliberately = true;
+    prefs_save();
     g_signal_quit = 1;
 }
 
@@ -1690,7 +1706,9 @@ static void draw_task_panel(int sw, int sh)
 
 
 int main(int argc, char **argv) {
-    (void)argc; (void)argv;                   
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--autostart") == 0) g_autostart = true;
+    }
     const Mode mode = MODE_FLOAT;
     const float scale = 1.0f, speed = 1.0f;  
     const bool pixel = false;
@@ -1936,7 +1954,16 @@ int main(int argc, char **argv) {
         fprintf(stderr, "out of memory\n");
         return 1;
     }
-    prefs_load();
+    bool closed_previous = false;
+    bool prefs_valid = prefs_load(&closed_previous);
+    /* An autostart after a deliberate close stays closed, and keeps the flag
+       for the next login. Any other start clears it. */
+    g_closed_deliberately = g_autostart && closed_previous;
+    if (g_closed_deliberately) {
+        ctx.running = false;
+    } else if (prefs_valid) {
+        prefs_save();
+    }
     startup_mark("scene initialized");
 
     if (g_ghost) {
