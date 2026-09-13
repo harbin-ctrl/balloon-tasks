@@ -6,10 +6,16 @@
 # It installs, uninstalls and launches the app for the current user, and puts
 # back the preferences file it found. The app is left installed and stopped.
 param(
-    [ValidateSet('install', 'autostart', 'x64')]
     [string[]]$Only = @('install', 'autostart', 'x64')
 )
 $ErrorActionPreference = 'Stop'
+
+# -File passes "install,x64" as one string.
+$Only = @($Only -split ',' | Where-Object { $_ })
+$unknown = $Only | Where-Object { $_ -notin 'install', 'autostart', 'x64' }
+if ($unknown) {
+    throw "Unknown test: $($unknown -join ', '). Use install, autostart or x64."
+}
 
 $repo = Split-Path -Parent $PSScriptRoot
 $work = Join-Path $env:TEMP 'balloon-tasks-test'

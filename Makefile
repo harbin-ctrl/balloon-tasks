@@ -167,10 +167,6 @@ uninstall:
 	uninstaller="$$(cygpath -u "$$LOCALAPPDATA")/Programs/$(APP_ID)/unins000.exe"; \
 	if [ -f "$$uninstaller" ]; then $(WIN_NO_ARGCONV) "$$uninstaller" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART; fi
 
-# Into the package the root Makefile's `package` builds.
-stage: $(TARGET)
-	$(call win_stage,$(APP_ID),$(APP_NAME),$(TARGET),$(DESTDIR))
-
 # An .ico entry holds at most 256 px.
 ICO_SIZES := 16 32 48 64 128 256
 
