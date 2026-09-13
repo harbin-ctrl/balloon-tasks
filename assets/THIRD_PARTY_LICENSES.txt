@@ -31,7 +31,7 @@ SOFTWARE.
 Baloo 2
 -------
 
-The Balloon Tasks! icon uses Baloo 2 ExtraBold.
+The Balloon Tasks! icon and task labels use Baloo 2 ExtraBold.
 
 Copyright 2019 The Baloo 2 Project Authors
 Source: https://github.com/EkType/Baloo2

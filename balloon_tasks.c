@@ -17,6 +17,7 @@
 #include "compat.h"
 #include "platform.h"
 #include "balloon_gen.h"
+#include "task_text.h"
 #include "ghost_icon.h"
 #include "audio.h"
 #include "ringmenu.h"
@@ -126,6 +127,10 @@ typedef struct {
     float pop_timer;
     float scheduled_pop_time;
     float scale;           
+    char task[TASK_TEXT_MAX + 1];
+    GLuint task_texture;
+    int task_width;
+    int task_height;
 } Sprite;
 
 static float frandf(void) { return (float)rand() / (float)RAND_MAX; }
@@ -167,11 +172,16 @@ static int g_damage_hist_n[DAMAGE_HISTORY];
 static int g_damage_hist_depth = 0;
 static Rect *g_cur_damage;                  
 static int g_ncur_damage;
+static int g_damage_cap;
 static Rect *g_sprite_rects;                
 
 static void damage_push(Rect r, int max_w, int max_h) {
     rect_clamp(&r, max_w, max_h);
     if (r.w <= 0 || r.h <= 0) return;
+    if (g_ncur_damage >= g_damage_cap) {
+        g_full_damage = true;
+        return;
+    }
     g_cur_damage[g_ncur_damage++] = r;
 }
 
@@ -530,8 +540,9 @@ static void sprite_update(Sprite *s, Mode mode, float dt, float t,
         if (s->base_x > sw + 40.f)     s->base_x = -w - 40.f;
         if (s->base_x < -w - 40.f)     s->base_x = sw + 40.f;
         s->x = s->base_x + sinf(t * 0.9f + s->phase) * 24.f;
-        if (s->y + h < 0) { 
-            sprite_roll_anim(s); 
+        /* The body has gone; do not wait for the transparent lower half of
+         * its source frame before bringing this task back at the bottom. */
+        if (s->y + h * BALLOON_TIE_Y < -10.f) {
             s->y = sh;
             s->base_x = frandf() * (sw - sprite_w(s, scale));
             s->vy = -(20.f + frandf() * 25.f) * speed;
@@ -624,6 +635,179 @@ static InteractionMode g_interaction_mode = INTERACTION_GRAB;
 static double g_press_x, g_press_y;
 static struct timespec g_press_ts;
 
+enum {
+    TASK_PANEL_MARGIN = 24,
+    SPRITE_CAP_INITIAL = 8,
+};
+
+static int g_sprite_cap;
+static char g_task_input[TASK_TEXT_MAX + 1];
+static bool g_task_input_active = true;
+static bool g_tasks_started;
+static bool g_task_panel_dirty = true;
+static GLuint g_task_panel_tex;
+
+static int task_panel_x(void)
+{
+    return (g_ctx->width - TASK_PANEL_WIDTH) / 2;
+}
+
+static int task_panel_y(void)
+{
+    int y = g_ctx->height - TASK_PANEL_HEIGHT - TASK_PANEL_MARGIN;
+    return y > TASK_PANEL_MARGIN ? y : TASK_PANEL_MARGIN;
+}
+
+static int tasks_left(void)
+{
+    int count = 0;
+    for (int i = 0; i < g_nsprites; i++) {
+        if (!g_sprites[i].dead && !g_sprites[i].popped) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static bool sprites_reserve(int needed)
+{
+    if (needed <= g_sprite_cap) {
+        return true;
+    }
+
+    int capacity = g_sprite_cap ? g_sprite_cap * 2 : SPRITE_CAP_INITIAL;
+    while (capacity < needed) {
+        capacity *= 2;
+    }
+    int damage_cap = capacity * 2 + 4;
+    Sprite *sprites = calloc((size_t)capacity, sizeof(*sprites));
+    Rect *sprite_rects = calloc((size_t)capacity, sizeof(*sprite_rects));
+    Rect *damage = calloc((size_t)damage_cap, sizeof(*damage));
+    PlatRect *input_rects = calloc((size_t)capacity + 1, sizeof(*input_rects));
+    Rect *history[DAMAGE_HISTORY] = {0};
+    bool ok = sprites && sprite_rects && damage && input_rects;
+    for (int i = 0; i < DAMAGE_HISTORY; i++) {
+        history[i] = calloc((size_t)damage_cap, sizeof(*history[i]));
+        ok = ok && history[i];
+    }
+    if (!ok) {
+        free(sprites);
+        free(sprite_rects);
+        free(damage);
+        free(input_rects);
+        for (int i = 0; i < DAMAGE_HISTORY; i++) {
+            free(history[i]);
+        }
+        return false;
+    }
+
+    if (g_nsprites > 0) {
+        memcpy(sprites, g_sprites, (size_t)g_nsprites * sizeof(*sprites));
+        memcpy(sprite_rects, g_sprite_rects,
+               (size_t)g_nsprites * sizeof(*sprite_rects));
+    }
+    free(g_sprites);
+    free(g_sprite_rects);
+    free(g_cur_damage);
+    free(g_ctx->input_rects);
+    for (int i = 0; i < DAMAGE_HISTORY; i++) {
+        free(g_damage_hist[i]);
+        g_damage_hist[i] = history[i];
+        g_damage_hist_n[i] = 0;
+    }
+    g_sprites = sprites;
+    g_sprite_rects = sprite_rects;
+    g_cur_damage = damage;
+    g_ctx->input_rects = input_rects;
+    g_sprite_cap = capacity;
+    g_damage_cap = damage_cap;
+    g_damage_hist_depth = 0;
+    g_full_damage = true;
+    return true;
+}
+
+static GLuint bitmap_texture(const TaskBitmap *bitmap)
+{
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bitmap->width, bitmap->height,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap->pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return texture;
+}
+
+static void task_panel_update(void)
+{
+    if (!g_task_panel_dirty) {
+        return;
+    }
+    TaskBitmap bitmap;
+    if (!task_panel_bitmap(g_task_input, g_task_input_active, g_tasks_started,
+                           tasks_left(), &bitmap)) {
+        return;
+    }
+    glBindTexture(GL_TEXTURE_2D, g_task_panel_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bitmap.width, bitmap.height,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, bitmap.pixels);
+    task_bitmap_free(&bitmap);
+    g_task_panel_dirty = false;
+    g_full_damage = true;
+    g_ctx->need_redraw = true;
+}
+
+static void task_input_changed(void)
+{
+    g_task_panel_dirty = true;
+    g_ctx->need_redraw = true;
+}
+
+static bool task_panel_hit(double x, double y)
+{
+    int panel_x = task_panel_x();
+    int panel_y = task_panel_y();
+    return x >= panel_x && x < panel_x + TASK_PANEL_WIDTH &&
+           y >= panel_y && y < panel_y + TASK_PANEL_HEIGHT;
+}
+
+static bool task_add(const char *text)
+{
+    bool visible = false;
+    for (const char *c = text; *c; c++) {
+        visible = visible || *c != ' ';
+    }
+    if (!visible || !sprites_reserve(g_nsprites + 1)) {
+        return false;
+    }
+
+    TaskBitmap bitmap;
+    if (!task_label_bitmap(text, &bitmap)) {
+        return false;
+    }
+    Sprite *sprite = &g_sprites[g_nsprites];
+    memset(sprite, 0, sizeof(*sprite));
+    memcpy(sprite->task, text, strlen(text) + 1);
+    sprite->task_texture = bitmap_texture(&bitmap);
+    sprite->task_width = bitmap.width;
+    sprite->task_height = bitmap.height;
+    task_bitmap_free(&bitmap);
+
+    sprite_roll_anim(sprite);
+    sprite_init(sprite, g_mode, g_scale, g_speed, g_ctx->width, g_ctx->height);
+    float body_height = sprite_h(sprite, g_scale) * BALLOON_TIE_Y;
+    float y_range = fmaxf(0.f, g_ctx->height - body_height);
+    sprite->y = frandf() * y_range;
+    g_nsprites++;
+    g_tasks_started = true;
+    g_task_panel_dirty = true;
+    g_full_damage = true;
+    g_ctx->need_redraw = true;
+    return true;
+}
+
 static void pop_sprite(Sprite *s, float pop_x, float pop_y) {
     int pop_idx = rand() % g_npop_anims;
     s->popped = true;
@@ -636,6 +820,8 @@ static void pop_sprite(Sprite *s, float pop_x, float pop_y) {
     float ph = sprite_h(s, g_scale);
     s->x = pop_x - pw * 0.5f;
     s->y = pop_y - ph * 0.5f;
+    g_task_panel_dirty = true;
+    g_ctx->need_redraw = true;
     play_pop_sound(POP_SOUND_VOLUME);
 }
 
@@ -897,6 +1083,20 @@ static void pointer_button(void *d, PlatButton button, PlatPress press) {
         return;
     }
 
+    if (button == PLAT_BTN_LEFT && pressed) {
+        if (task_panel_hit(g_ctx->ptr_x, g_ctx->ptr_y)) {
+            if (!g_task_input_active) {
+                g_task_input_active = true;
+                task_input_changed();
+            }
+            return;
+        }
+        if (g_task_input_active) {
+            g_task_input_active = false;
+            task_input_changed();
+        }
+    }
+
     if (button == PLAT_BTN_MIDDLE) {
         /* Middle-click has no action outside the ring menu. */
         return;
@@ -970,17 +1170,53 @@ static void pointer_lost(void *d) {
 }
 static void key_press(void *d, PlatKey key, PlatPress press) {
     (void)d;
-    if (press != PLAT_PRESSED) return;
-    if (key == PLAT_KEY_ESC || key == PLAT_KEY_Q)
+    if (press != PLAT_PRESSED) {
+        return;
+    }
+    if (g_task_input_active) {
+        size_t length = strlen(g_task_input);
+        if (key == PLAT_KEY_ENTER) {
+            if (task_add(g_task_input)) {
+                g_task_input[0] = '\0';
+                task_input_changed();
+            }
+        } else if (key == PLAT_KEY_BACKSPACE && length > 0) {
+            g_task_input[length - 1] = '\0';
+            task_input_changed();
+        } else if (key == PLAT_KEY_ESC) {
+            g_task_input_active = false;
+            task_input_changed();
+        }
+        return;
+    }
+    if (key == PLAT_KEY_ESC || key == PLAT_KEY_Q) {
         trigger_quit();
-    else if (key == PLAT_KEY_SPACE)
+    } else if (key == PLAT_KEY_SPACE) {
         g_ghost = !g_ghost;
-    else if (key == PLAT_KEY_M)
+    } else if (key == PLAT_KEY_M) {
         toggle_master_mute();
-    else if (key == PLAT_KEY_UP)
+    } else if (key == PLAT_KEY_UP) {
         adjust_master_volume(0.05f);
-    else if (key == PLAT_KEY_DOWN)
+    } else if (key == PLAT_KEY_DOWN) {
         adjust_master_volume(-0.05f);
+    }
+}
+static void text_input(void *d, const char *utf8) {
+    (void)d;
+    if (!g_task_input_active) {
+        return;
+    }
+
+    size_t length = strlen(g_task_input);
+    for (const unsigned char *c = (const unsigned char *)utf8;
+         *c && length < TASK_TEXT_MAX; c++) {
+        if (*c < 0x20 || *c > 0x7E) {
+            continue;
+        }
+        g_task_input[length++] = (char)*c;
+    }
+    g_task_input[length] = '\0';
+    task_input_changed();
 }
 static void keyboard_lost(void *d) {
     (void)d;
@@ -994,6 +1230,7 @@ static const PlatHandlers g_handlers = {
     .pointer_scroll = pointer_scroll,
     .pointer_lost = pointer_lost,
     .key = key_press,
+    .text = text_input,
     .keyboard_lost = keyboard_lost,
     .resize = on_resize,
     .close = on_close,
@@ -1097,12 +1334,40 @@ static void draw_string(const Sprite *s, int sw, int sh) {
     draw_tex_quad(g_str_tex[f], x, y, w, h, sw, sh, 1);
 }
 
+static void task_quad(const Sprite *s, float *x, float *y, float *w, float *h)
+{
+    float body_width = sprite_w(s, g_scale);
+    float body_height = sprite_h(s, g_scale);
+    *w = (float)s->task_width;
+    *h = (float)s->task_height;
+    *x = s->x + body_width * BALLOON_BODY_CX - *w * 0.5f;
+    *y = s->y + body_height * BALLOON_BODY_CY - *h * 0.5f;
+}
+
+static void draw_task(const Sprite *s, int sw, int sh)
+{
+    float x, y, width, height;
+    task_quad(s, &x, &y, &width, &height);
+    draw_tex_quad(s->task_texture, x, y, width, height, sw, sh, 1);
+}
+
+static Rect task_panel_rect(void)
+{
+    return (Rect) {task_panel_x(), task_panel_y(),
+                   TASK_PANEL_WIDTH, TASK_PANEL_HEIGHT};
+}
+
+static void draw_task_panel(int sw, int sh)
+{
+    draw_tex_quad(g_task_panel_tex, task_panel_x(), task_panel_y(),
+                  TASK_PANEL_WIDTH, TASK_PANEL_HEIGHT, sw, sh, 1);
+}
+
 
 
 int main(int argc, char **argv) {
     (void)argc; (void)argv;                   
     const Mode mode = MODE_FLOAT;
-    const int count = 30;
     const float scale = 1.0f, speed = 1.0f;  
     const bool pixel = false;
     int nfiles = 0;
@@ -1251,6 +1516,14 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    glGenTextures(1, &g_task_panel_tex);
+    glBindTexture(GL_TEXTURE_2D, g_task_panel_tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    task_panel_update();
+
     if (!create_needle_cursor(&ctx)) {
         fprintf(stderr, "balloon-tasks: no needle cursor, using the default pointer\n");
     }
@@ -1331,22 +1604,9 @@ int main(int argc, char **argv) {
     g_anims = anims;
     g_anim_tex = anim_tex;
     g_nanims = nfiles;
-    g_nsprites = count;
-    g_sprites = calloc((size_t)g_nsprites, sizeof(Sprite));
-    int max_damage = 2 * g_nsprites;   
-    g_cur_damage = calloc((size_t)max_damage, sizeof(Rect));
-    g_sprite_rects = calloc((size_t)g_nsprites, sizeof(Rect));
-    ctx.input_rects = calloc((size_t)g_nsprites + 1, sizeof(PlatRect));
-    bool dmg_ok = g_cur_damage && g_sprite_rects && ctx.input_rects;
-    for (int i = 0; i < DAMAGE_HISTORY; i++) {
-        g_damage_hist[i] = calloc((size_t)max_damage, sizeof(Rect));
-        if (!g_damage_hist[i]) dmg_ok = false;
-    }
-    if (!g_sprites || !dmg_ok) { fprintf(stderr, "out of memory\n"); return 1; }
-    for (int i = 0; i < g_nsprites; i++) {
-        Sprite *s = &g_sprites[i];
-        sprite_roll_anim(s);
-        sprite_init(s, mode, scale, speed, ctx.width, ctx.height);
+    if (!sprites_reserve(SPRITE_CAP_INITIAL)) {
+        fprintf(stderr, "out of memory\n");
+        return 1;
     }
     startup_mark("scene initialized");
 
@@ -1388,6 +1648,7 @@ int main(int argc, char **argv) {
             plat_surface_resize(ctx.plat, ctx.width, ctx.height);
             ctx.resize_pending = false;
         }
+        task_panel_update();
 
         struct timespec ts_now;
         clock_gettime(CLOCK_MONOTONIC, &ts_now);
@@ -1435,24 +1696,16 @@ int main(int argc, char **argv) {
             respawn_timer -= dt;
             if (respawn_timer <= 0.f) {
                 respawn_timer = 10.0f + frandf() * 5.0f;
-                int live_count = 0;
                 for (int i = 0; i < g_nsprites; i++) {
-                    if (!g_sprites[i].dead && !g_sprites[i].popped) {
-                        live_count++;
-                    }
-                }
-                if (live_count < count) {
-                    for (int i = 0; i < g_nsprites; i++) {
-                        if (g_sprites[i].dead) {
-                            Sprite *s = &g_sprites[i];
-                            sprite_roll_anim(s);
-                            sprite_init(s, mode, scale, speed, ctx.width, ctx.height);
-                            s->y = (float)ctx.height;
-                            s->dead = false;
-                            s->popped = false;
-                            s->grabbed = false;
-                            break;
-                        }
+                    if (g_sprites[i].dead) {
+                        Sprite *s = &g_sprites[i];
+                        sprite_roll_anim(s);
+                        sprite_init(s, mode, scale, speed, ctx.width, ctx.height);
+                        s->y = (float)ctx.height;
+                        s->dead = false;
+                        s->popped = false;
+                        s->grabbed = false;
+                        break;
                     }
                 }
             }
@@ -1472,6 +1725,7 @@ int main(int argc, char **argv) {
                 GHOST_ICON_SIZE, GHOST_ICON_SIZE
             };
         } else {
+            ctx.input_rects[region_count++] = task_panel_rect();
             for (int i = 0; i < g_nsprites; i++) {
                 Sprite *s = &g_sprites[i];
                 if (s->dead || s->popped) continue;
@@ -1513,6 +1767,11 @@ int main(int argc, char **argv) {
                 if (!s->popped) {
                     float sx, sy, sw2, sh2;
                     string_quad(s, &sx, &sy, &sw2, &sh2);
+                    if (sx < x0) x0 = sx;
+                    if (sy < y0) y0 = sy;
+                    if (sx + sw2 > x1) x1 = sx + sw2;
+                    if (sy + sh2 > y1) y1 = sy + sh2;
+                    task_quad(s, &sx, &sy, &sw2, &sh2);
                     if (sx < x0) x0 = sx;
                     if (sy < y0) y0 = sy;
                     if (sx + sw2 > x1) x1 = sx + sw2;
@@ -1586,6 +1845,7 @@ int main(int argc, char **argv) {
                 draw_sprite(s, scale, ctx.width, ctx.height);
                 if (!s->popped) {
                     draw_string(s, ctx.width, ctx.height);
+                    draw_task(s, ctx.width, ctx.height);
                 }
             }
         } else if (repaint.w > 0 && repaint.h > 0) {
@@ -1599,9 +1859,23 @@ int main(int argc, char **argv) {
                 draw_sprite(s, scale, ctx.width, ctx.height);
                 if (!s->popped) {
                     draw_string(s, ctx.width, ctx.height);
+                    draw_task(s, ctx.width, ctx.height);
                 }
             }
             glDisable(GL_SCISSOR_TEST);
+        }
+
+        if (!g_ghost) {
+            Rect panel = task_panel_rect();
+            if (repaint_full) {
+                draw_task_panel(ctx.width, ctx.height);
+            } else if (rect_intersects(&repaint, &panel)) {
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(repaint.x, ctx.height - (repaint.y + repaint.h),
+                          repaint.w, repaint.h);
+                draw_task_panel(ctx.width, ctx.height);
+                glDisable(GL_SCISSOR_TEST);
+            }
         }
 
         if (g_ghost) {
@@ -1710,8 +1984,18 @@ int main(int argc, char **argv) {
 
     }
 
+    for (int i = 0; i < g_nsprites; i++) {
+        glDeleteTextures(1, &g_sprites[i].task_texture);
+    }
+    glDeleteTextures(1, &g_task_panel_tex);
     ringmenu_destroy(g_menu);
     free(g_menu_scratch);
+    free(g_sprites);
+    free(g_sprite_rects);
+    free(g_cur_damage);
+    for (int i = 0; i < DAMAGE_HISTORY; i++) {
+        free(g_damage_hist[i]);
+    }
     free(ctx.input_rects);
     /* The window goes first, so the audio's fade plays out over the desktop. */
     plat_close(ctx.plat);

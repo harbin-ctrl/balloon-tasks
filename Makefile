@@ -42,7 +42,7 @@ CFLAGS  += -I$(RINGMENU_DIR) -I$(TOYAUDIO_DIR)
 GHOSTICON_DIR ?= $(TOYS_ROOT)/shared
 GHOSTICON_LIB := $(GHOSTICON_DIR)/libghosticon.a
 
-OBJS    := balloon_tasks.o balloon_gen.o thunder_synth.o audio.o
+OBJS    := balloon_tasks.o balloon_gen.o task_text.o thunder_synth.o audio.o
 TOY_LIBS := $(RINGMENU_LIB) $(TOYAUDIO_LIB) $(GHOSTICON_LIB) $(TOYPLATFORM_LIB)
 ifeq ($(PLATFORM),win32)
 # The icon, embedded so the taskbar, Explorer and the shortcut all show it.
@@ -61,11 +61,14 @@ all: $(TARGET)
 $(TARGET): $(OBJS) $(RES_OBJ) $(TOY_LIBS)
 	$(CC) -o $@ $(OBJS) $(RES_OBJ) $(TOY_LIBS) $(LIBS) $(APP_LDFLAGS)
 
-balloon_tasks.o: balloon_tasks.c balloon_gen.h audio.h cursor_hand_grab.h $(RINGMENU_DIR)/ringmenu.h \
+balloon_tasks.o: balloon_tasks.c balloon_gen.h task_text.h audio.h cursor_hand_grab.h $(RINGMENU_DIR)/ringmenu.h \
 	$(GHOSTICON_DIR)/ghost_icon.h $(TOYPLATFORM_DIR)/platform.h $(TOYPLATFORM_DIR)/compat.h
 	$(CC) $(CFLAGS) -I$(GHOSTICON_DIR) -c -o $@ $<
 
 balloon_gen.o: balloon_gen.c balloon_gen.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+task_text.o: task_text.c task_text.h task_font.h assets/fonts/Baloo2-Variable.ttf
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 audio.o: audio.c audio.h $(TOYAUDIO_DIR)/toy_audio.h \

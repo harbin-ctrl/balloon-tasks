@@ -1,9 +1,14 @@
 # Balloon Tasks!
 
-Plays APNG balloons floating up on the desktop: no window, no border, transparent
-wherever the APNG is transparent, and click-through everywhere except the
-sprites themselves. 30 big balloons in eight colors drift up the desktop, each
-inflated to its own random size (a ~20% spread) so no two look stamped.
+Turns tasks into balloons floating up the desktop. The transparent sheet has no
+system window frame and remains click-through outside the task panel, balloons,
+and menus. It starts empty: type up to 32 characters in **New Task:** and press
+Enter to create a labeled balloon at a random visible position.
+
+Task text is centered across the balloon body and may extend beyond both sides.
+Each balloon keeps floating upward; once its body clears the top it immediately
+returns at the bottom. Balloons retain the original random size spread, wind,
+grabbing, popping, and storm behavior.
 
 Occasionally a breeze picks up and blows the flotilla left or right for a few seconds;
 balloons blown off one side wrap in from the other, and each balloon answers
@@ -48,6 +53,8 @@ License. Normal builds use the ready-made PNGs. To regenerate them, run
 `make regen-icons`.
 
 Controls:
+- **New Task:** type a task of up to 32 characters and press **Enter** to create it.
+- **Click the task panel** to return keyboard input to the field.
 - **Left-click** a balloon to bop it (it will bob and react to the poke, with a soft thump).
 - **Hold and drag** to grab and carry it — it hangs from the pointer until you let go, then resumes floating.
 - **Right-click** a balloon to pop it (with a bang).
